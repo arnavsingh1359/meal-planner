@@ -380,18 +380,25 @@ export default function WeeklyPlanner() {
 
   async function getCurrentUser() {
     const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-    if (error) {
-      throw error;
+    if (sessionError) {
+      throw sessionError;
     }
 
-    if (!user) {
-      throw new Error(
-        "You are not signed in.",
-      );
+    if (!session) {
+      return null;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      throw userError;
     }
 
     return user;
@@ -440,6 +447,14 @@ export default function WeeklyPlanner() {
     try {
       const user = await getCurrentUser();
 
+      if (!user) {
+        setWeeklyPlanId(null);
+        setWeeklyPlan({});
+        setCookingBlocks([]);
+        setStatusMessage("");
+        return;
+      }
+
       const weekStartString =
         toDateString(requestedWeekStart);
 
@@ -467,8 +482,7 @@ export default function WeeklyPlanner() {
         return;
       }
 
-      const plan =
-        planData as WeeklyPlanRow;
+      const plan = planData as WeeklyPlanRow;
 
       setWeeklyPlanId(plan.id);
 
@@ -575,16 +589,24 @@ export default function WeeklyPlanner() {
       setIsLoadingWeek(false);
     }
   }
-
   async function ensureWeeklyPlan() {
     if (weeklyPlanId) {
       return weeklyPlanId;
     }
 
     const user = await getCurrentUser();
+    if (!user) {
 
-    const weekStartString =
-      toDateString(weekStart);
+    throw new Error(
+
+      "Please log in before saving a weekly plan.",
+
+    );
+
+  }
+
+  const weekStartString =
+    toDateString(weekStart);
 
     const {
       data: existingPlan,
@@ -731,6 +753,11 @@ export default function WeeklyPlanner() {
 
     try {
       const user = await getCurrentUser();
+      if (!user) {
+        throw new Error(
+          "Please log in before saving a meal.",
+        );
+      }
       const planId =
         await ensureWeeklyPlan();
 
@@ -1097,6 +1124,11 @@ export default function WeeklyPlanner() {
 
     try {
       const user = await getCurrentUser();
+      if (!user) {
+        throw new Error(
+          "Please log in before saving a cooking block.",
+        );
+      }
       const planId =
         await ensureWeeklyPlan();
 
