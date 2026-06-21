@@ -2,6 +2,10 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import {
+  formatIngredientName,
+  inferIngredientCategory,
+} from "@/lib/ingredient-utils";
 
 type HelpTipProps = {
   text: string;
@@ -20,7 +24,18 @@ function HelpTip({ text }: HelpTipProps) {
 
 type MealType = "Breakfast" | "Lunch" | "Dinner" | "Snack";
 
+type StepType = "active" | "passive";
+
+type CatalogueIngredient = {
+  id: string;
+  name: string;
+  category: string;
+  default_unit: string;
+  approximate_allowed: boolean;
+};
+
 type RecipeIngredientInput = {
+  ingredientId: string | null;
   name: string;
   quantity: string;
   unit: string;
@@ -31,7 +46,7 @@ type RecipeIngredientInput = {
 type RecipeStepInput = {
   instruction: string;
   durationMinutes: string;
-  stepType: "active" | "passive";
+  stepType: StepType;
 };
 
 type Recipe = {
@@ -54,6 +69,7 @@ type Recipe = {
 
   recipe_ingredients: {
     id: string;
+    ingredient_id: string | null;
     name: string;
     quantity: number;
     unit: string;
@@ -66,19 +82,15 @@ type Recipe = {
     id: string;
     instruction: string;
     duration_minutes: number;
-    step_type: "active" | "passive";
+    step_type: StepType;
     position: number;
   }[];
 };
 
-const mealTypeOptions: MealType[] = [
-  "Breakfast",
-  "Lunch",
-  "Dinner",
-  "Snack",
-];
+const mealTypeOptions: MealType[] = ["Breakfast", "Lunch", "Dinner", "Snack"];
 
 const emptyIngredient: RecipeIngredientInput = {
+  ingredientId: null,
   name: "",
   quantity: "",
   unit: "",
@@ -92,16 +104,22 @@ const emptyStep: RecipeStepInput = {
   stepType: "active",
 };
 
+function normalizeIngredientName(value: string) {
+  return formatIngredientName(value);
+}
+
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+
+  const [catalogueIngredients, setCatalogueIngredients] = useState<
+    CatalogueIngredient[]
+  >([]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [editingRecipeId, setEditingRecipeId] = useState<
-    string | null
-  >(null);
+  const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
 
   const [message, setMessage] = useState("");
 
@@ -111,42 +129,106 @@ export default function RecipesPage() {
   const [mealTypes, setMealTypes] = useState<MealType[]>([]);
 
   const [defaultServings, setDefaultServings] = useState("1");
-  const [minimumBatchServings, setMinimumBatchServings] =
-    useState("1");
-  const [maximumBatchServings, setMaximumBatchServings] =
-    useState("10");
+  const [minimumBatchServings, setMinimumBatchServings] = useState("1");
+  const [maximumBatchServings, setMaximumBatchServings] = useState("10");
 
-  const [preparationMinutes, setPreparationMinutes] =
-    useState("0");
+  const [preparationMinutes, setPreparationMinutes] = useState("0");
+
   const [cookingMinutes, setCookingMinutes] = useState("0");
   const [cleanupMinutes, setCleanupMinutes] = useState("0");
 
-  const [refrigeratorLifeDays, setRefrigeratorLifeDays] =
-    useState("3");
+  const [refrigeratorLifeDays, setRefrigeratorLifeDays] = useState("3");
 
   const [freezerAllowed, setFreezerAllowed] = useState(false);
-  const [freezerLifeDays, setFreezerLifeDays] =
-    useState("30");
+  const [freezerLifeDays, setFreezerLifeDays] = useState("30");
 
-  const [ingredients, setIngredients] = useState<
-    RecipeIngredientInput[]
-  >([{ ...emptyIngredient }]);
-
-  const [steps, setSteps] = useState<RecipeStepInput[]>([
-    { ...emptyStep },
+  const [ingredients, setIngredients] = useState<RecipeIngredientInput[]>([
+    { ...emptyIngredient },
   ]);
 
+  const [steps, setSteps] = useState<RecipeStepInput[]>([{ ...emptyStep }]);
+
   useEffect(() => {
-    void loadRecipes();
+    void loadInitialData();
   }, []);
 
-  async function loadRecipes() {
+  async function getCurrentUser() {
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      throw sessionError;
+    }
+
+    if (!session) {
+      return null;
+    }
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      throw userError;
+    }
+
+    return user;
+  }
+
+  async function loadInitialData() {
     setIsLoading(true);
     setMessage("");
 
+    try {
+      await Promise.all([loadRecipes(), loadCatalogueIngredients()]);
+    } catch (error) {
+      console.error("Could not load recipe data:", error);
+
+      setMessage(
+        error instanceof Error ? error.message : "Could not load recipes.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function loadCatalogueIngredients() {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      setCatalogueIngredients([]);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("ingredients")
+      .select(
+        `
+        id,
+        name,
+        category,
+        default_unit,
+        approximate_allowed
+      `,
+      )
+      .eq("user_id", user.id)
+      .order("name", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    setCatalogueIngredients((data ?? []) as CatalogueIngredient[]);
+  }
+
+  async function loadRecipes() {
     const { data, error } = await supabase
       .from("recipes")
-      .select(`
+      .select(
+        `
         id,
         name,
         description,
@@ -162,6 +244,7 @@ export default function RecipesPage() {
         freezer_life_days,
         recipe_ingredients (
           id,
+          ingredient_id,
           name,
           quantity,
           unit,
@@ -176,34 +259,27 @@ export default function RecipesPage() {
           step_type,
           position
         )
-      `)
+      `,
+      )
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Recipe loading error:", error);
-      setMessage(error.message);
-      setIsLoading(false);
-      return;
+      throw error;
     }
 
     const normalizedRecipes = (data ?? []).map((recipe) => ({
       ...recipe,
 
-      recipe_ingredients: [
-        ...(recipe.recipe_ingredients ?? []),
-      ].sort(
-        (first, second) =>
-          first.position - second.position,
+      recipe_ingredients: [...(recipe.recipe_ingredients ?? [])].sort(
+        (first, second) => first.position - second.position,
       ),
 
       recipe_steps: [...(recipe.recipe_steps ?? [])].sort(
-        (first, second) =>
-          first.position - second.position,
+        (first, second) => first.position - second.position,
       ),
     })) as Recipe[];
 
     setRecipes(normalizedRecipes);
-    setIsLoading(false);
   }
 
   function resetForm() {
@@ -245,48 +321,31 @@ export default function RecipesPage() {
 
     setMealTypes(recipe.meal_types as MealType[]);
 
-    setDefaultServings(
-      String(recipe.default_servings),
-    );
+    setDefaultServings(String(recipe.default_servings));
 
-    setMinimumBatchServings(
-      String(recipe.minimum_batch_servings),
-    );
+    setMinimumBatchServings(String(recipe.minimum_batch_servings));
 
-    setMaximumBatchServings(
-      String(recipe.maximum_batch_servings),
-    );
+    setMaximumBatchServings(String(recipe.maximum_batch_servings));
 
-    setPreparationMinutes(
-      String(recipe.preparation_minutes),
-    );
+    setPreparationMinutes(String(recipe.preparation_minutes));
 
-    setCookingMinutes(
-      String(recipe.cooking_minutes),
-    );
+    setCookingMinutes(String(recipe.cooking_minutes));
+    setCleanupMinutes(String(recipe.cleanup_minutes));
 
-    setCleanupMinutes(
-      String(recipe.cleanup_minutes),
-    );
-
-    setRefrigeratorLifeDays(
-      String(recipe.refrigerator_life_days),
-    );
+    setRefrigeratorLifeDays(String(recipe.refrigerator_life_days));
 
     setFreezerAllowed(recipe.freezer_allowed);
 
-    setFreezerLifeDays(
-      String(recipe.freezer_life_days ?? 30),
-    );
+    setFreezerLifeDays(String(recipe.freezer_life_days ?? 30));
 
     setIngredients(
       recipe.recipe_ingredients.length > 0
         ? recipe.recipe_ingredients.map((ingredient) => ({
+            ingredientId: ingredient.ingredient_id,
             name: ingredient.name,
             quantity: String(ingredient.quantity),
             unit: ingredient.unit,
-            preparationNote:
-              ingredient.preparation_note,
+            preparationNote: ingredient.preparation_note,
             isOptional: ingredient.is_optional,
           }))
         : [{ ...emptyIngredient }],
@@ -296,9 +355,7 @@ export default function RecipesPage() {
       recipe.recipe_steps.length > 0
         ? recipe.recipe_steps.map((step) => ({
             instruction: step.instruction,
-            durationMinutes: String(
-              step.duration_minutes,
-            ),
+            durationMinutes: String(step.duration_minutes),
             stepType: step.step_type,
           }))
         : [{ ...emptyStep }],
@@ -324,7 +381,7 @@ export default function RecipesPage() {
   function updateIngredient(
     index: number,
     field: keyof RecipeIngredientInput,
-    value: string | boolean,
+    value: string | boolean | null,
   ) {
     setIngredients((current) =>
       current.map((ingredient, ingredientIndex) =>
@@ -338,19 +395,45 @@ export default function RecipesPage() {
     );
   }
 
+  function handleIngredientNameChange(index: number, value: string) {
+    const normalizedValue = normalizeIngredientName(value);
+
+    const matchingIngredient = catalogueIngredients.find(
+      (ingredient) =>
+        ingredient.name.toLowerCase() === normalizedValue.toLowerCase(),
+    );
+
+    setIngredients((current) =>
+      current.map((ingredient, ingredientIndex) => {
+        if (ingredientIndex !== index) {
+          return ingredient;
+        }
+
+        if (matchingIngredient) {
+          return {
+            ...ingredient,
+            ingredientId: matchingIngredient.id,
+            name: value,
+            unit: ingredient.unit || matchingIngredient.default_unit,
+          };
+        }
+
+        return {
+          ...ingredient,
+          ingredientId: null,
+          name: value,
+        };
+      }),
+    );
+  }
+
   function addIngredient() {
-    setIngredients((current) => [
-      ...current,
-      { ...emptyIngredient },
-    ]);
+    setIngredients((current) => [...current, { ...emptyIngredient }]);
   }
 
   function removeIngredient(index: number) {
     setIngredients((current) =>
-      current.filter(
-        (_, ingredientIndex) =>
-          ingredientIndex !== index,
-      ),
+      current.filter((_, ingredientIndex) => ingredientIndex !== index),
     );
   }
 
@@ -372,17 +455,12 @@ export default function RecipesPage() {
   }
 
   function addStep() {
-    setSteps((current) => [
-      ...current,
-      { ...emptyStep },
-    ]);
+    setSteps((current) => [...current, { ...emptyStep }]);
   }
 
   function removeStep(index: number) {
     setSteps((current) =>
-      current.filter(
-        (_, stepIndex) => stepIndex !== index,
-      ),
+      current.filter((_, stepIndex) => stepIndex !== index),
     );
   }
 
@@ -395,118 +473,173 @@ export default function RecipesPage() {
       return "Select at least one meal type.";
     }
 
-    if (
-      !defaultServings ||
-      Number(defaultServings) < 1
-    ) {
+    if (!defaultServings || Number(defaultServings) < 1) {
       return "Default servings must be at least 1.";
     }
 
-    if (
-      !minimumBatchServings ||
-      Number(minimumBatchServings) < 1
-    ) {
+    if (!minimumBatchServings || Number(minimumBatchServings) < 1) {
       return "Minimum batch servings must be at least 1.";
     }
 
-    if (
-      !maximumBatchServings ||
-      Number(maximumBatchServings) < 1
-    ) {
+    if (!maximumBatchServings || Number(maximumBatchServings) < 1) {
       return "Maximum batch servings must be at least 1.";
     }
 
-    if (
-      Number(maximumBatchServings) <
-      Number(minimumBatchServings)
-    ) {
+    if (Number(maximumBatchServings) < Number(minimumBatchServings)) {
       return "Maximum batch servings cannot be smaller than the minimum.";
     }
 
     if (
-      !preparationMinutes ||
-      Number(preparationMinutes) < 0
-    ) {
-      return "Preparation minutes cannot be negative.";
-    }
-
-    if (
-      !cookingMinutes ||
-      Number(cookingMinutes) < 0
-    ) {
-      return "Cooking minutes cannot be negative.";
-    }
-
-    if (
-      !cleanupMinutes ||
+      Number(preparationMinutes) < 0 ||
+      Number(cookingMinutes) < 0 ||
       Number(cleanupMinutes) < 0
     ) {
-      return "Cleanup minutes cannot be negative.";
+      return "Recipe times cannot be negative.";
     }
 
-    if (
-      !refrigeratorLifeDays ||
-      Number(refrigeratorLifeDays) < 0
-    ) {
+    if (Number(refrigeratorLifeDays) < 0) {
       return "Refrigerator life cannot be negative.";
     }
 
-    if (
-      freezerAllowed &&
-      (!freezerLifeDays ||
-        Number(freezerLifeDays) < 0)
-    ) {
-      return "Enter a valid freezer life.";
+    if (freezerAllowed && Number(freezerLifeDays) < 0) {
+      return "Freezer life cannot be negative.";
     }
 
-    const validIngredients = ingredients.filter(
-      (ingredient) =>
-        ingredient.name.trim() &&
-        Number(ingredient.quantity) > 0 &&
-        ingredient.unit.trim(),
-    );
-
-    if (validIngredients.length === 0) {
-      return "Add at least one complete ingredient.";
+    if (ingredients.length === 0) {
+      return "Add at least one ingredient.";
     }
 
-    const hasIncompleteIngredient =
-      ingredients.some((ingredient) => {
-        const hasAnyValue =
-          ingredient.name.trim() ||
-          ingredient.quantity.trim() ||
-          ingredient.unit.trim() ||
-          ingredient.preparationNote.trim();
+    for (const ingredient of ingredients) {
+      if (!ingredient.name.trim()) {
+        return "Every ingredient needs a name.";
+      }
 
-        if (!hasAnyValue) {
-          return false;
-        }
+      if (!ingredient.quantity.trim() || Number(ingredient.quantity) <= 0) {
+        return `Enter a valid quantity for ${ingredient.name || "each ingredient"}.`;
+      }
 
-        return (
-          !ingredient.name.trim() ||
-          Number(ingredient.quantity) <= 0 ||
-          !ingredient.unit.trim()
-        );
-      });
-
-    if (hasIncompleteIngredient) {
-      return "Complete or remove each partially filled ingredient.";
+      if (!ingredient.unit.trim()) {
+        return `Enter a unit for ${ingredient.name}.`;
+      }
     }
 
-    const validSteps = steps.filter((step) =>
-      step.instruction.trim(),
-    );
-
-    if (validSteps.length === 0) {
+    if (!steps.some((step) => step.instruction.trim())) {
       return "Add at least one cooking step.";
     }
 
     return "";
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
+  async function findOrCreateCatalogueIngredient(
+    userId: string,
+    ingredientInput: RecipeIngredientInput,
   ) {
+    if (ingredientInput.ingredientId) {
+      const matchingIngredient = catalogueIngredients.find(
+        (ingredient) => ingredient.id === ingredientInput.ingredientId,
+      );
+
+      if (matchingIngredient) {
+        return matchingIngredient;
+      }
+    }
+
+    const normalizedName = normalizeIngredientName(ingredientInput.name);
+
+    const locallyMatchingIngredient = catalogueIngredients.find(
+      (ingredient) =>
+        ingredient.name.toLowerCase() === normalizedName.toLowerCase(),
+    );
+
+    if (locallyMatchingIngredient) {
+      return locallyMatchingIngredient;
+    }
+
+    const { data: existingIngredients, error: existingError } = await supabase
+      .from("ingredients")
+      .select(
+        `
+        id,
+        name,
+        category,
+        default_unit,
+        approximate_allowed
+      `,
+      )
+      .eq("user_id", userId)
+      .ilike("name", normalizedName)
+      .limit(1);
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    const existingIngredient = existingIngredients?.[0] as
+      | CatalogueIngredient
+      | undefined;
+
+    if (existingIngredient) {
+      return existingIngredient;
+    }
+
+    const { data, error } = await supabase
+      .from("ingredients")
+      .insert({
+        user_id: userId,
+        name: normalizedName,
+        category: inferIngredientCategory(normalizedName),
+        default_unit: ingredientInput.unit.trim(),
+        approximate_allowed: true,
+      })
+      .select(
+        `
+        id,
+        name,
+        category,
+        default_unit,
+        approximate_allowed
+      `,
+      )
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        const { data: duplicateIngredients, error: duplicateError } =
+          await supabase
+            .from("ingredients")
+            .select(
+              `
+            id,
+            name,
+            category,
+            default_unit,
+            approximate_allowed
+          `,
+            )
+            .eq("user_id", userId)
+            .ilike("name", normalizedName)
+            .limit(1);
+
+        if (duplicateError) {
+          throw duplicateError;
+        }
+
+        const duplicateIngredient = duplicateIngredients?.[0] as
+          | CatalogueIngredient
+          | undefined;
+
+        if (duplicateIngredient) {
+          return duplicateIngredient;
+        }
+      }
+
+      throw error;
+    }
+
+    return data as CatalogueIngredient;
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const validationError = validateForm();
@@ -520,17 +653,10 @@ export default function RecipesPage() {
     setMessage("");
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError) {
-        throw userError;
-      }
+      const user = await getCurrentUser();
 
       if (!user) {
-        throw new Error("You are not signed in.");
+        throw new Error("Please log in before saving a recipe.");
       }
 
       const recipeValues = {
@@ -542,31 +668,21 @@ export default function RecipesPage() {
 
         default_servings: Number(defaultServings),
 
-        minimum_batch_servings: Number(
-          minimumBatchServings,
-        ),
+        minimum_batch_servings: Number(minimumBatchServings),
 
-        maximum_batch_servings: Number(
-          maximumBatchServings,
-        ),
+        maximum_batch_servings: Number(maximumBatchServings),
 
-        preparation_minutes:
-          Number(preparationMinutes),
+        preparation_minutes: Number(preparationMinutes),
 
-        cooking_minutes:
-          Number(cookingMinutes),
+        cooking_minutes: Number(cookingMinutes),
 
-        cleanup_minutes:
-          Number(cleanupMinutes),
+        cleanup_minutes: Number(cleanupMinutes),
 
-        refrigerator_life_days:
-          Number(refrigeratorLifeDays),
+        refrigerator_life_days: Number(refrigeratorLifeDays),
 
         freezer_allowed: freezerAllowed,
 
-        freezer_life_days: freezerAllowed
-          ? Number(freezerLifeDays)
-          : null,
+        freezer_life_days: freezerAllowed ? Number(freezerLifeDays) : null,
 
         updated_at: new Date().toISOString(),
       };
@@ -585,9 +701,7 @@ export default function RecipesPage() {
 
         recipeId = editingRecipeId;
 
-        const {
-          error: deleteIngredientsError,
-        } = await supabase
+        const { error: deleteIngredientsError } = await supabase
           .from("recipe_ingredients")
           .delete()
           .eq("recipe_id", recipeId);
@@ -596,20 +710,16 @@ export default function RecipesPage() {
           throw deleteIngredientsError;
         }
 
-        const { error: deleteStepsError } =
-          await supabase
-            .from("recipe_steps")
-            .delete()
-            .eq("recipe_id", recipeId);
+        const { error: deleteStepsError } = await supabase
+          .from("recipe_steps")
+          .delete()
+          .eq("recipe_id", recipeId);
 
         if (deleteStepsError) {
           throw deleteStepsError;
         }
       } else {
-        const {
-          data: insertedRecipe,
-          error: recipeError,
-        } = await supabase
+        const { data: insertedRecipe, error: recipeError } = await supabase
           .from("recipes")
           .insert(recipeValues)
           .select("id")
@@ -622,96 +732,77 @@ export default function RecipesPage() {
         recipeId = insertedRecipe.id;
       }
 
-      const ingredientRows = ingredients
-        .filter(
-          (ingredient) =>
-            ingredient.name.trim() &&
-            Number(ingredient.quantity) > 0 &&
-            ingredient.unit.trim(),
-        )
-        .map((ingredient, index) => ({
-          recipe_id: recipeId,
-          user_id: user.id,
+      const resolvedCatalogueIngredients = await Promise.all(
+        ingredients.map((ingredient) =>
+          findOrCreateCatalogueIngredient(user.id, ingredient),
+        ),
+      );
 
-          name: ingredient.name.trim(),
+      const ingredientRows = ingredients.map((ingredient, index) => ({
+        recipe_id: recipeId,
+        user_id: user.id,
 
-          quantity: Number(
-            ingredient.quantity,
-          ),
+        ingredient_id: resolvedCatalogueIngredients[index].id,
 
-          unit: ingredient.unit.trim(),
+        name: resolvedCatalogueIngredients[index].name,
 
-          preparation_note:
-            ingredient.preparationNote.trim(),
+        quantity: Number(ingredient.quantity),
 
-          is_optional:
-            ingredient.isOptional,
+        unit: ingredient.unit.trim(),
 
-          position: index,
-        }));
+        preparation_note: ingredient.preparationNote.trim(),
 
-      if (ingredientRows.length > 0) {
-        const { error: ingredientError } =
-          await supabase
-            .from("recipe_ingredients")
-            .insert(ingredientRows);
+        is_optional: ingredient.isOptional,
 
-        if (ingredientError) {
-          throw ingredientError;
-        }
+        position: index,
+      }));
+
+      const { error: ingredientError } = await supabase
+        .from("recipe_ingredients")
+        .insert(ingredientRows);
+
+      if (ingredientError) {
+        throw ingredientError;
       }
 
       const stepRows = steps
-        .filter((step) =>
-          step.instruction.trim(),
-        )
+        .filter((step) => step.instruction.trim())
         .map((step, index) => ({
           recipe_id: recipeId,
           user_id: user.id,
 
-          instruction:
-            step.instruction.trim(),
+          instruction: step.instruction.trim(),
 
-          duration_minutes:
-            Number(step.durationMinutes) || 0,
+          duration_minutes: Number(step.durationMinutes) || 0,
 
           step_type: step.stepType,
 
           position: index,
         }));
 
-      if (stepRows.length > 0) {
-        const { error: stepError } =
-          await supabase
-            .from("recipe_steps")
-            .insert(stepRows);
+      const { error: stepError } = await supabase
+        .from("recipe_steps")
+        .insert(stepRows);
 
-        if (stepError) {
-          throw stepError;
-        }
+      if (stepError) {
+        throw stepError;
       }
 
       closeForm();
-      await loadRecipes();
+
+      await Promise.all([loadRecipes(), loadCatalogueIngredients()]);
     } catch (error) {
-      console.error(
-        "Recipe saving error:",
-        error,
-      );
+      console.error("Recipe saving error:", error);
 
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not save the recipe.",
+        error instanceof Error ? error.message : "Could not save the recipe.",
       );
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function deleteRecipe(
-    recipeId: string,
-  ) {
+  async function deleteRecipe(recipeId: string) {
     const shouldDelete = window.confirm(
       "Delete this recipe and all of its ingredients and steps?",
     );
@@ -726,10 +817,7 @@ export default function RecipesPage() {
       .eq("id", recipeId);
 
     if (error) {
-      console.error(
-        "Recipe deletion error:",
-        error,
-      );
+      console.error("Recipe deletion error:", error);
 
       setMessage(error.message);
       return;
@@ -742,15 +830,12 @@ export default function RecipesPage() {
     <>
       <header className="page-header">
         <div>
-          <p className="eyebrow">
-            Recipe library
-          </p>
+          <p className="eyebrow">Recipe library</p>
 
           <h1>Recipes</h1>
 
           <p className="subtitle">
-            Add ingredients, cooking steps,
-            storage rules, and batch limits for
+            Add ingredients, cooking steps, storage rules, and batch limits for
             each dish.
           </p>
         </div>
@@ -770,7 +855,13 @@ export default function RecipesPage() {
         </p>
       ) : null}
 
-      <section className="recipe-library-grid">
+      <section
+        aria-label="Recipes grouped by meal type"
+        style={{
+          display: "grid",
+          gap: "14px",
+        }}
+      >
         {isLoading ? (
           <article className="panel">
             <p>Loading recipes...</p>
@@ -779,132 +870,252 @@ export default function RecipesPage() {
           <article className="panel empty-state">
             <strong>No recipes yet</strong>
 
-            <p>
-              Add your first recipe to begin
-              building your meal library.
-            </p>
+            <p>Add your first recipe to begin building your meal library.</p>
           </article>
         ) : (
-          recipes.map((recipe) => (
-            <article
-              className="panel recipe-card"
-              key={recipe.id}
-            >
-              <div className="recipe-card-heading">
-                <div>
-                  <p className="eyebrow">
-                    {recipe.meal_types.join(" · ")}
-                  </p>
+          mealTypeOptions.map((mealType) => {
+            const mealRecipes = recipes
+              .filter((recipe) => recipe.meal_types.includes(mealType))
+              .sort((first, second) => first.name.localeCompare(second.name));
 
-                  <h2>{recipe.name}</h2>
-                </div>
+            return (
+              <details
+                className="panel"
+                key={mealType}
+                style={{
+                  padding: 0,
+                  overflow: "hidden",
+                }}
+              >
+                <summary
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "16px",
+                    padding: "18px 20px",
+                    cursor: "pointer",
+                    listStyle: "none",
+                    userSelect: "none",
+                  }}
+                >
+                  <div>
+                    <p className="eyebrow" style={{ marginBottom: "4px" }}>
+                      Meal type
+                    </p>
 
-                <div className="recipe-card-actions">
-                  <button
-                    className="text-button"
-                    onClick={() =>
-                      openEditRecipe(recipe)
-                    }
-                    type="button"
+                    <h2 style={{ margin: 0 }}>{mealType}</h2>
+                  </div>
+
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      minWidth: "36px",
+                      height: "36px",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      borderRadius: "999px",
+                      background: "var(--primary-soft)",
+                      color: "var(--primary)",
+                      fontWeight: 800,
+                    }}
                   >
-                    Edit
-                  </button>
+                    {mealRecipes.length}
+                  </span>
+                </summary>
 
-                  <button
-                    className="text-button danger-text"
-                    onClick={() =>
-                      deleteRecipe(recipe.id)
-                    }
-                    type="button"
-                  >
-                    Delete
-                  </button>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "10px",
+                    padding: "0 16px 16px",
+                    borderTop: "1px solid var(--border)",
+                  }}
+                >
+                  {mealRecipes.length === 0 ? (
+                    <div className="empty-state">
+                      <strong>No {mealType.toLowerCase()} recipes</strong>
+
+                      <p>Add or edit a recipe and assign it to {mealType}.</p>
+                    </div>
+                  ) : (
+                    mealRecipes.map((recipe) => (
+                      <details
+                        key={`${mealType}-${recipe.id}`}
+                        style={{
+                          marginTop: "12px",
+                          border: "1px solid var(--border)",
+                          borderRadius: "12px",
+                          background: "var(--surface-soft)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <summary
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "16px",
+                            padding: "15px 16px",
+                            cursor: "pointer",
+                            listStyle: "none",
+                            userSelect: "none",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <h3
+                              style={{
+                                margin: 0,
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {recipe.name}
+                            </h3>
+
+                            <p
+                              style={{
+                                margin: "5px 0 0",
+                                color: "var(--muted)",
+                                fontSize: "0.8rem",
+                              }}
+                            >
+                              {recipe.default_servings} servings ·{" "}
+                              {recipe.preparation_minutes +
+                                recipe.cooking_minutes +
+                                recipe.cleanup_minutes}{" "}
+                              min
+                            </p>
+                          </div>
+
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              color: "var(--primary)",
+                              fontSize: "1.25rem",
+                              fontWeight: 800,
+                            }}
+                          >
+                            ⌄
+                          </span>
+                        </summary>
+
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: "18px",
+                            padding: "0 16px 18px",
+                            borderTop: "1px solid var(--border)",
+                          }}
+                        >
+                          <div
+                            className="recipe-card-heading"
+                            style={{ paddingTop: "16px" }}
+                          >
+                            <div>
+                              <p className="eyebrow">
+                                {recipe.meal_types.join(" · ")}
+                              </p>
+
+                              <h2>{recipe.name}</h2>
+                            </div>
+
+                            <div className="recipe-card-actions">
+                              <button
+                                className="text-button"
+                                onClick={() => openEditRecipe(recipe)}
+                                type="button"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                className="text-button danger-text"
+                                onClick={() => deleteRecipe(recipe.id)}
+                                type="button"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+
+                          {recipe.description ? (
+                            <p style={{ margin: 0 }}>{recipe.description}</p>
+                          ) : null}
+
+                          <div className="recipe-metadata">
+                            <span>
+                              {recipe.default_servings} default servings
+                            </span>
+
+                            <span>
+                              Batch {recipe.minimum_batch_servings}–
+                              {recipe.maximum_batch_servings}
+                            </span>
+
+                            <span>
+                              {recipe.preparation_minutes +
+                                recipe.cooking_minutes +
+                                recipe.cleanup_minutes}{" "}
+                              min total
+                            </span>
+
+                            <span>
+                              {recipe.refrigerator_life_days} days refrigerated
+                            </span>
+
+                            <span>
+                              {recipe.freezer_allowed
+                                ? `Freezer friendly${
+                                    recipe.freezer_life_days !== null
+                                      ? ` · ${recipe.freezer_life_days} days`
+                                      : ""
+                                  }`
+                                : "Do not freeze"}
+                            </span>
+                          </div>
+
+                          <div className="recipe-card-section">
+                            <strong>Ingredients</strong>
+
+                            <ul>
+                              {recipe.recipe_ingredients.map((ingredient) => (
+                                <li key={ingredient.id}>
+                                  {ingredient.quantity} {ingredient.unit}{" "}
+                                  {ingredient.name}
+                                  {ingredient.preparation_note
+                                    ? `, ${ingredient.preparation_note}`
+                                    : ""}
+                                  {ingredient.is_optional ? " (optional)" : ""}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div className="recipe-card-section">
+                            <strong>Steps</strong>
+
+                            <ol>
+                              {recipe.recipe_steps.map((step) => (
+                                <li key={step.id}>
+                                  {step.instruction}
+
+                                  {step.duration_minutes > 0
+                                    ? ` — ${step.duration_minutes} min`
+                                    : ""}
+
+                                  {` (${step.step_type})`}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        </div>
+                      </details>
+                    ))
+                  )}
                 </div>
-              </div>
-
-              {recipe.description ? (
-                <p>{recipe.description}</p>
-              ) : null}
-
-              <div className="recipe-metadata">
-                <span>
-                  {recipe.default_servings} default
-                  servings
-                </span>
-
-                <span>
-                  Batch {recipe.minimum_batch_servings}–
-                  {recipe.maximum_batch_servings}
-                </span>
-
-                <span>
-                  {recipe.preparation_minutes +
-                    recipe.cooking_minutes +
-                    recipe.cleanup_minutes}{" "}
-                  min total
-                </span>
-
-                <span>
-                  {recipe.refrigerator_life_days} days
-                  refrigerated
-                </span>
-
-                <span>
-                  {recipe.freezer_allowed
-                    ? `Freezer friendly${
-                        recipe.freezer_life_days !== null
-                          ? ` · ${recipe.freezer_life_days} days`
-                          : ""
-                      }`
-                    : "Do not freeze"}
-                </span>
-              </div>
-
-              <div className="recipe-card-section">
-                <strong>Ingredients</strong>
-
-                <ul>
-                  {recipe.recipe_ingredients.map(
-                    (ingredient) => (
-                      <li key={ingredient.id}>
-                        {ingredient.quantity}{" "}
-                        {ingredient.unit}{" "}
-                        {ingredient.name}
-
-                        {ingredient.preparation_note
-                          ? `, ${ingredient.preparation_note}`
-                          : ""}
-
-                        {ingredient.is_optional
-                          ? " (optional)"
-                          : ""}
-                      </li>
-                    ),
-                  )}
-                </ul>
-              </div>
-
-              <div className="recipe-card-section">
-                <strong>Steps</strong>
-
-                <ol>
-                  {recipe.recipe_steps.map(
-                    (step) => (
-                      <li key={step.id}>
-                        {step.instruction}
-
-                        {step.duration_minutes > 0
-                          ? ` — ${step.duration_minutes} min`
-                          : ""}
-
-                        {` (${step.step_type})`}
-                      </li>
-                    ),
-                  )}
-                </ol>
-              </div>
-            </article>
-          ))
+              </details>
+            );
+          })
         )}
       </section>
 
@@ -915,9 +1126,7 @@ export default function RecipesPage() {
           className="modal-backdrop"
           role="dialog"
           onMouseDown={(event) => {
-            if (
-              event.target === event.currentTarget
-            ) {
+            if (event.target === event.currentTarget && !isSaving) {
               closeForm();
             }
           }}
@@ -925,20 +1134,17 @@ export default function RecipesPage() {
           <div className="modal-card recipe-form-modal">
             <div className="modal-header">
               <div>
-                <p className="eyebrow">
-                  Recipe library
-                </p>
+                <p className="eyebrow">Recipe library</p>
 
                 <h2 id="recipe-form-title">
-                  {editingRecipeId
-                    ? "Edit recipe"
-                    : "Add recipe"}
+                  {editingRecipeId ? "Edit recipe" : "Add recipe"}
                 </h2>
               </div>
 
               <button
                 aria-label="Close recipe editor"
                 className="close-button"
+                disabled={isSaving}
                 onClick={closeForm}
                 type="button"
               >
@@ -957,9 +1163,7 @@ export default function RecipesPage() {
                     <input
                       required
                       value={name}
-                      onChange={(event) =>
-                        setName(event.target.value)
-                      }
+                      onChange={(event) => setName(event.target.value)}
                     />
                   </label>
 
@@ -969,11 +1173,7 @@ export default function RecipesPage() {
                     <textarea
                       rows={3}
                       value={description}
-                      onChange={(event) =>
-                        setDescription(
-                          event.target.value,
-                        )
-                      }
+                      onChange={(event) => setDescription(event.target.value)}
                     />
                   </label>
 
@@ -981,25 +1181,17 @@ export default function RecipesPage() {
                     <legend>Meal types</legend>
 
                     <div className="meal-type-options">
-                      {mealTypeOptions.map(
-                        (mealType) => (
-                          <label key={mealType}>
-                            <input
-                              checked={mealTypes.includes(
-                                mealType,
-                              )}
-                              type="checkbox"
-                              onChange={() =>
-                                toggleMealType(
-                                  mealType,
-                                )
-                              }
-                            />
+                      {mealTypeOptions.map((mealType) => (
+                        <label key={mealType}>
+                          <input
+                            checked={mealTypes.includes(mealType)}
+                            type="checkbox"
+                            onChange={() => toggleMealType(mealType)}
+                          />
 
-                            <span>{mealType}</span>
-                          </label>
-                        ),
-                      )}
+                          <span>{mealType}</span>
+                        </label>
+                      ))}
                     </div>
                   </fieldset>
                 </section>
@@ -1020,9 +1212,7 @@ export default function RecipesPage() {
                         type="number"
                         value={defaultServings}
                         onChange={(event) =>
-                          setDefaultServings(
-                            event.target.value,
-                          )
+                          setDefaultServings(event.target.value)
                         }
                       />
                     </label>
@@ -1037,13 +1227,9 @@ export default function RecipesPage() {
                         min="1"
                         required
                         type="number"
-                        value={
-                          minimumBatchServings
-                        }
+                        value={minimumBatchServings}
                         onChange={(event) =>
-                          setMinimumBatchServings(
-                            event.target.value,
-                          )
+                          setMinimumBatchServings(event.target.value)
                         }
                       />
                     </label>
@@ -1058,13 +1244,9 @@ export default function RecipesPage() {
                         min="1"
                         required
                         type="number"
-                        value={
-                          maximumBatchServings
-                        }
+                        value={maximumBatchServings}
                         onChange={(event) =>
-                          setMaximumBatchServings(
-                            event.target.value,
-                          )
+                          setMaximumBatchServings(event.target.value)
                         }
                       />
                     </label>
@@ -1081,9 +1263,7 @@ export default function RecipesPage() {
                         type="number"
                         value={preparationMinutes}
                         onChange={(event) =>
-                          setPreparationMinutes(
-                            event.target.value,
-                          )
+                          setPreparationMinutes(event.target.value)
                         }
                       />
                     </label>
@@ -1091,7 +1271,7 @@ export default function RecipesPage() {
                     <label className="form-field">
                       <span>
                         Cooking minutes
-                        <HelpTip text="The main cooking duration, including both active work and unattended cooking time." />
+                        <HelpTip text="The main cooking duration, including active work and unattended cooking time." />
                       </span>
 
                       <input
@@ -1100,9 +1280,7 @@ export default function RecipesPage() {
                         type="number"
                         value={cookingMinutes}
                         onChange={(event) =>
-                          setCookingMinutes(
-                            event.target.value,
-                          )
+                          setCookingMinutes(event.target.value)
                         }
                       />
                     </label>
@@ -1119,9 +1297,7 @@ export default function RecipesPage() {
                         type="number"
                         value={cleanupMinutes}
                         onChange={(event) =>
-                          setCleanupMinutes(
-                            event.target.value,
-                          )
+                          setCleanupMinutes(event.target.value)
                         }
                       />
                     </label>
@@ -1136,13 +1312,9 @@ export default function RecipesPage() {
                         min="0"
                         required
                         type="number"
-                        value={
-                          refrigeratorLifeDays
-                        }
+                        value={refrigeratorLifeDays}
                         onChange={(event) =>
-                          setRefrigeratorLifeDays(
-                            event.target.value,
-                          )
+                          setRefrigeratorLifeDays(event.target.value)
                         }
                       />
                     </label>
@@ -1153,15 +1325,11 @@ export default function RecipesPage() {
                       checked={freezerAllowed}
                       type="checkbox"
                       onChange={(event) =>
-                        setFreezerAllowed(
-                          event.target.checked,
-                        )
+                        setFreezerAllowed(event.target.checked)
                       }
                     />
 
-                    <span>
-                      This recipe can be frozen
-                    </span>
+                    <span>This recipe can be frozen</span>
                   </label>
 
                   {freezerAllowed ? (
@@ -1177,9 +1345,7 @@ export default function RecipesPage() {
                         type="number"
                         value={freezerLifeDays}
                         onChange={(event) =>
-                          setFreezerLifeDays(
-                            event.target.value,
-                          )
+                          setFreezerLifeDays(event.target.value)
                         }
                       />
                     </label>
@@ -1200,28 +1366,47 @@ export default function RecipesPage() {
                   </div>
 
                   <div className="dynamic-list">
-                    {ingredients.map(
-                      (ingredient, index) => (
-                        <div
-                          className="dynamic-row"
-                          key={index}
-                        >
+                    {ingredients.map((ingredient, index) => {
+                      const selectedCatalogueIngredient =
+                        catalogueIngredients.find(
+                          (catalogueIngredient) =>
+                            catalogueIngredient.id === ingredient.ingredientId,
+                        );
+
+                      return (
+                        <div className="dynamic-row" key={index}>
                           <div className="ingredient-row-grid">
                             <label className="form-field">
-                              <span>Name</span>
+                              <span>
+                                Ingredient
+                                <HelpTip text="Choose an existing pantry ingredient or type a new ingredient name. New names are added to the ingredient catalogue automatically." />
+                              </span>
 
                               <input
-                                value={
-                                  ingredient.name
-                                }
+                                list="ingredient-catalogue-options"
+                                placeholder="Start typing an ingredient"
+                                required
+                                value={ingredient.name}
                                 onChange={(event) =>
-                                  updateIngredient(
+                                  handleIngredientNameChange(
                                     index,
-                                    "name",
                                     event.target.value,
                                   )
                                 }
                               />
+
+                              <datalist id="ingredient-catalogue-options">
+                                {catalogueIngredients.map(
+                                  (catalogueIngredient) => (
+                                    <option
+                                      key={catalogueIngredient.id}
+                                      value={catalogueIngredient.name}
+                                    >
+                                      {catalogueIngredient.category}
+                                    </option>
+                                  ),
+                                )}
+                              </datalist>
                             </label>
 
                             <label className="form-field">
@@ -1232,11 +1417,10 @@ export default function RecipesPage() {
 
                               <input
                                 min="0"
+                                required
                                 step="any"
                                 type="number"
-                                value={
-                                  ingredient.quantity
-                                }
+                                value={ingredient.quantity}
                                 onChange={(event) =>
                                   updateIngredient(
                                     index,
@@ -1255,9 +1439,8 @@ export default function RecipesPage() {
 
                               <input
                                 placeholder="g, ml, whole..."
-                                value={
-                                  ingredient.unit
-                                }
+                                required
+                                value={ingredient.unit}
                                 onChange={(event) =>
                                   updateIngredient(
                                     index,
@@ -1269,6 +1452,20 @@ export default function RecipesPage() {
                             </label>
                           </div>
 
+                          {selectedCatalogueIngredient ? (
+                            <p className="ingredient-catalogue-match">
+                              Linked to catalogue:{" "}
+                              <strong>
+                                {selectedCatalogueIngredient.name}
+                              </strong>{" "}
+                              · {selectedCatalogueIngredient.category}
+                            </p>
+                          ) : ingredient.name.trim() ? (
+                            <p className="ingredient-catalogue-new">
+                              This will create a new ingredient catalogue entry.
+                            </p>
+                          ) : null}
+
                           <label className="form-field">
                             <span>
                               Preparation note
@@ -1277,9 +1474,7 @@ export default function RecipesPage() {
 
                             <input
                               placeholder="Finely chopped, rinsed..."
-                              value={
-                                ingredient.preparationNote
-                              }
+                              value={ingredient.preparationNote}
                               onChange={(event) =>
                                 updateIngredient(
                                   index,
@@ -1293,9 +1488,7 @@ export default function RecipesPage() {
                           <div className="dynamic-row-footer">
                             <label className="checkbox-field">
                               <input
-                                checked={
-                                  ingredient.isOptional
-                                }
+                                checked={ingredient.isOptional}
                                 type="checkbox"
                                 onChange={(event) =>
                                   updateIngredient(
@@ -1309,15 +1502,10 @@ export default function RecipesPage() {
                               <span>Optional</span>
                             </label>
 
-                            {ingredients.length >
-                            1 ? (
+                            {ingredients.length > 1 ? (
                               <button
                                 className="text-button danger-text"
-                                onClick={() =>
-                                  removeIngredient(
-                                    index,
-                                  )
-                                }
+                                onClick={() => removeIngredient(index)}
                                 type="button"
                               >
                                 Remove
@@ -1325,8 +1513,8 @@ export default function RecipesPage() {
                             ) : null}
                           </div>
                         </div>
-                      ),
-                    )}
+                      );
+                    })}
                   </div>
                 </section>
 
@@ -1345,20 +1533,14 @@ export default function RecipesPage() {
 
                   <div className="dynamic-list">
                     {steps.map((step, index) => (
-                      <div
-                        className="dynamic-row"
-                        key={index}
-                      >
+                      <div className="dynamic-row" key={index}>
                         <label className="form-field">
-                          <span>
-                            Step {index + 1}
-                          </span>
+                          <span>Step {index + 1}</span>
 
                           <textarea
+                            required
                             rows={3}
-                            value={
-                              step.instruction
-                            }
+                            value={step.instruction}
                             onChange={(event) =>
                               updateStep(
                                 index,
@@ -1379,9 +1561,7 @@ export default function RecipesPage() {
                             <input
                               min="0"
                               type="number"
-                              value={
-                                step.durationMinutes
-                              }
+                              value={step.durationMinutes}
                               onChange={(event) =>
                                 updateStep(
                                   index,
@@ -1408,13 +1588,9 @@ export default function RecipesPage() {
                                 )
                               }
                             >
-                              <option value="active">
-                                Active
-                              </option>
+                              <option value="active">Active</option>
 
-                              <option value="passive">
-                                Passive
-                              </option>
+                              <option value="passive">Passive</option>
                             </select>
                           </label>
                         </div>
@@ -1425,9 +1601,7 @@ export default function RecipesPage() {
 
                             <button
                               className="text-button danger-text"
-                              onClick={() =>
-                                removeStep(index)
-                              }
+                              onClick={() => removeStep(index)}
                               type="button"
                             >
                               Remove
@@ -1440,10 +1614,7 @@ export default function RecipesPage() {
                 </section>
 
                 {message ? (
-                  <p
-                    className="form-error"
-                    role="alert"
-                  >
+                  <p className="form-error" role="alert">
                     {message}
                   </p>
                 ) : null}
@@ -1455,6 +1626,7 @@ export default function RecipesPage() {
                 <div className="modal-primary-actions">
                   <button
                     className="secondary-button"
+                    disabled={isSaving}
                     onClick={closeForm}
                     type="button"
                   >
