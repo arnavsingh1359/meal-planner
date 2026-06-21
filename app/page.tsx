@@ -1,65 +1,83 @@
-import Image from "next/image";
+const todayTasks = [
+  {
+    time: "8:00 AM",
+    title: "Prepare breakfast",
+    detail: "No breakfast selected",
+  },
+  {
+    time: "6:30 PM",
+    title: "Cooking block",
+    detail: "No session planned yet",
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <>
+      <header className="page-header">
+        <div>
+          <p className="eyebrow">Today</p>
+          <h1>Your kitchen dashboard</h1>
+          <p className="subtitle">
+            Once your weekly menu is created, today&apos;s preparation and
+            cooking tasks will appear here.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </header>
+
+      <section className="summary-grid" aria-label="Weekly summary">
+        <article className="summary-card">
+          <span>Meals planned</span>
+          <strong>0</strong>
+          <small>of 28 meal slots</small>
+        </article>
+
+        <article className="summary-card">
+          <span>Cooking sessions</span>
+          <strong>0</strong>
+          <small>No schedule generated</small>
+        </article>
+
+        <article className="summary-card">
+          <span>Shopping items</span>
+          <strong>0</strong>
+          <small>Pantry not reviewed</small>
+        </article>
+      </section>
+
+      <section className="content-grid">
+        <article className="panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Schedule</p>
+              <h2>Today&apos;s tasks</h2>
+            </div>
+          </div>
+
+          <div className="task-list">
+            {todayTasks.map((task) => (
+              <div className="task" key={`${task.time}-${task.title}`}>
+                <div className="task-time">{task.time}</div>
+                <div className="task-marker" aria-hidden="true" />
+
+                <div>
+                  <strong>{task.title}</strong>
+                  <p>{task.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel next-step-panel">
+          <p className="eyebrow">Getting started</p>
+          <h2>Create your first weekly plan</h2>
+          <p>
+            Select meals for each day, enter your cooking blocks, and later
+            generate an optimized preparation schedule.
+          </p>
+        </article>
+      </section>
+    </>
   );
 }
