@@ -1525,9 +1525,6 @@ p {
     border-radius: 17px;
   }
 
-  .mobile-auth-actions .auth-header-link {
-    display: none;
-  }
 
   .planner-summary-stats {
     grid-template-columns: 1fr;
@@ -1631,5 +1628,33 @@ p {
 
   .auth-required-actions {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .mobile-auth-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mobile-auth-actions .auth-header-link {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .mobile-auth-actions .compact-auth-button {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 10px;
+    white-space: nowrap;
+    text-decoration: none;
   }
 }
