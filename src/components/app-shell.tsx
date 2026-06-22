@@ -252,9 +252,9 @@ export default function AppShell({ children }: AppShellProps) {
 
     async function loadUser() {
       const {
-        data: { user: currentUser },
+        data: { session },
         error,
-      } = await supabase.auth.getUser();
+      } = await supabase.auth.getSession();
 
       if (!isMounted) {
         return;
@@ -262,12 +262,12 @@ export default function AppShell({ children }: AppShellProps) {
 
       if (error) {
         console.error(
-          "Could not load authenticated user:",
+          "Could not restore authentication session:",
           error,
         );
       }
 
-      setUser(currentUser ?? null);
+      setUser(session?.user ?? null);
       setAuthLoading(false);
     }
 
