@@ -2,27 +2,20 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /*
-    Generates a completely static version of the app
-    inside the /out directory.
-
-    Capacitor will copy this directory into the iOS app.
+    Keep the application statically exportable for PWA hosting.
+    The generated site is written to the /out directory.
   */
   output: "export",
 
   /*
-    Produces routes such as:
-
-    /recipes/index.html
-    /pantry/index.html
-
-    This is more reliable inside a native WebView than
-    routes ending in standalone .html files.
+    Produces directory-style routes such as /recipes/index.html.
+    This keeps direct navigation reliable on static hosts.
   */
   trailingSlash: true,
 
   /*
-    Next.js's default image optimizer requires a running
-    Next.js server, which is unavailable in a static app.
+    Next.js image optimization requires a running Next.js server.
+    Static PWA deployments therefore use unoptimized images.
   */
   images: {
     unoptimized: true,

@@ -2378,7 +2378,7 @@ p {
 }
 
 /*
-  iPhone and Capacitor safe-area support.
+  iPhone Safari and installed-PWA safe-area support.
 
   These values keep content away from:
   - the Dynamic Island / notch
