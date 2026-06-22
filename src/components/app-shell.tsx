@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
@@ -95,8 +95,15 @@ function AppIcon({ name, size = 20 }: AppIconProps) {
     case "settings":
       return (
         <svg {...commonProps}>
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V20.3h-3v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.03H5.3v-3h.14A1.7 1.7 0 0 0 7 9.94a1.7 1.7 0 0 0-.34-1.88L6.6 8l2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7v-.08h3v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.14v3h-.14A1.7 1.7 0 0 0 19.4 15Z" />
+          <path d="M4 7h10" />
+          <path d="M18 7h2" />
+          <circle cx="16" cy="7" r="2" />
+          <path d="M4 17h2" />
+          <path d="M10 17h10" />
+          <circle cx="8" cy="17" r="2" />
+          <path d="M4 12h5" />
+          <path d="M13 12h7" />
+          <circle cx="11" cy="12" r="2" />
         </svg>
       );
 
@@ -162,6 +169,7 @@ const protectedRoutes = [
   "/pantry",
   "/shopping",
   "/settings",
+  "/account",
 ];
 
 function isProtectedRoute(pathname: string) {
@@ -183,9 +191,9 @@ function AuthenticationRequired() {
           <h1>Log in to continue</h1>
 
           <p>
-            Your recipes, weekly plans, pantry, and
-            shopping list are private and synchronized
-            through your account.
+            Public recipes are shared across the community.
+            Your favorites, customizations, weekly plans, pantry,
+            and shopping list stay tied to your account.
           </p>
         </div>
 
@@ -211,7 +219,6 @@ function AuthenticationRequired() {
 
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const router = useRouter();
 
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -288,7 +295,9 @@ export default function AppShell({ children }: AppShellProps) {
   async function handleSignOut() {
     setIsSigningOut(true);
 
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({
+      scope: "local",
+    });
 
     if (error) {
       console.error("Could not sign out:", error);
@@ -297,9 +306,18 @@ export default function AppShell({ children }: AppShellProps) {
     }
 
     setUser(null);
-    setIsSigningOut(false);
-    router.push("/");
-    router.refresh();
+
+    for (const key of Object.keys(window.localStorage)) {
+      if (
+        key.startsWith("meal-planner-") &&
+        key !== "meal-planner-sidebar-collapsed"
+      ) {
+        window.localStorage.removeItem(key);
+      }
+    }
+
+    window.sessionStorage.clear();
+    window.location.replace("/login?mode=login");
   }
 
   const isLoginPage = pathname === "/login";
@@ -416,13 +434,18 @@ export default function AppShell({ children }: AppShellProps) {
             </p>
           ) : user ? (
             <div className="signed-in-panel">
-              <div
-                className="sidebar-user-icon"
-                title={user.email ?? "Authenticated user"}
-                aria-label={user.email ?? "Authenticated user"}
+              <Link
+                className={
+                  pathname.startsWith("/account")
+                    ? "sidebar-user-icon active"
+                    : "sidebar-user-icon"
+                }
+                href="/account"
+                title="Account settings"
+                aria-label="Open account settings"
               >
                 <AppIcon name="user" size={20} />
-              </div>
+              </Link>
 
               <div className="signed-in-details">
                 <span>Signed in as</span>
@@ -470,14 +493,25 @@ export default function AppShell({ children }: AppShellProps) {
 
           <div className="mobile-auth-actions">
             {authLoading ? null : user ? (
-              <button
-                className="text-button"
-                disabled={isSigningOut}
-                onClick={handleSignOut}
-                type="button"
-              >
-                {isSigningOut ? "Signing out…" : "Sign out"}
-              </button>
+              <>
+                <Link
+                  className="mobile-account-link"
+                  href="/account"
+                  aria-label="Open account settings"
+                  title="Account settings"
+                >
+                  <AppIcon name="user" size={19} />
+                </Link>
+
+                <button
+                  className="text-button"
+                  disabled={isSigningOut}
+                  onClick={handleSignOut}
+                  type="button"
+                >
+                  {isSigningOut ? "Signing out…" : "Sign out"}
+                </button>
+              </>
             ) : (
               <>
                 <Link

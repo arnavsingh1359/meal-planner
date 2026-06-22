@@ -31,6 +31,8 @@ function HelpTip({ text }: HelpTipProps) {
 
 type MealType = "Breakfast" | "Lunch" | "Dinner" | "Snack";
 
+type RecipeLibraryTab = "discover" | "favorites" | "mine";
+
 type StepType = "active" | "passive";
 
 type CatalogueIngredient = {
@@ -72,6 +74,10 @@ type RecipeTaskInput = {
 
 type Recipe = {
   id: string;
+  user_id: string;
+  is_public: boolean;
+  parent_recipe_id: string | null;
+  creator_name: string;
   name: string;
   description: string;
   meal_types: string[];
@@ -161,6 +167,13 @@ function normalizeIngredientName(value: string) {
 
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [favoriteRecipeIds, setFavoriteRecipeIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [activeLibraryTab, setActiveLibraryTab] =
+    useState<RecipeLibraryTab>("discover");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [catalogueIngredients, setCatalogueIngredients] = useState<
     CatalogueIngredient[]
@@ -171,6 +184,7 @@ export default function RecipesPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  const [editingRecipeIsPublic, setEditingRecipeIsPublic] = useState(true);
 
   const [message, setMessage] = useState("");
 
@@ -237,7 +251,11 @@ export default function RecipesPage() {
     setMessage("");
 
     try {
-      await Promise.all([loadRecipes(), loadCatalogueIngredients()]);
+      await Promise.all([
+        loadRecipes(),
+        loadCatalogueIngredients(),
+        loadFavorites(),
+      ]);
     } catch (error) {
       console.error("Could not load recipe data:", error);
 
@@ -247,6 +265,30 @@ export default function RecipesPage() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function loadFavorites() {
+    const user = await getCurrentUser();
+
+    setCurrentUserId(user?.id ?? null);
+
+    if (!user) {
+      setFavoriteRecipeIds(new Set());
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("user_recipe_favorites")
+      .select("recipe_id")
+      .eq("user_id", user.id);
+
+    if (error) {
+      throw error;
+    }
+
+    setFavoriteRecipeIds(
+      new Set((data ?? []).map((favorite) => favorite.recipe_id)),
+    );
   }
 
   async function loadCatalogueIngredients() {
@@ -262,6 +304,7 @@ export default function RecipesPage() {
       .select(
         `
         id,
+        user_id,
         name,
         category,
         default_unit,
@@ -284,6 +327,10 @@ export default function RecipesPage() {
       .select(
         `
         id,
+        user_id,
+        is_public,
+        parent_recipe_id,
+        creator_name,
         name,
         description,
         meal_types,
@@ -357,6 +404,7 @@ export default function RecipesPage() {
 
   function resetForm() {
     setEditingRecipeId(null);
+    setEditingRecipeIsPublic(true);
 
     setName("");
     setDescription("");
@@ -388,7 +436,13 @@ export default function RecipesPage() {
   }
 
   function openEditRecipe(recipe: Recipe) {
+    if (!currentUserId || recipe.user_id !== currentUserId) {
+      setMessage("Customize this public recipe before editing it.");
+      return;
+    }
+
     setEditingRecipeId(recipe.id);
+    setEditingRecipeIsPublic(recipe.is_public);
 
     setName(recipe.name);
     setDescription(recipe.description);
@@ -853,6 +907,8 @@ export default function RecipesPage() {
 
         freezer_life_days: freezerAllowed ? Number(freezerLifeDays) : null,
 
+        is_public: editingRecipeId ? editingRecipeIsPublic : true,
+
         updated_at: new Date().toISOString(),
       };
 
@@ -994,7 +1050,11 @@ export default function RecipesPage() {
 
       closeForm();
 
-      await Promise.all([loadRecipes(), loadCatalogueIngredients()]);
+      await Promise.all([
+        loadRecipes(),
+        loadCatalogueIngredients(),
+        loadFavorites(),
+      ]);
     } catch (error) {
       console.error("Recipe saving error:", error);
 
@@ -1004,6 +1064,83 @@ export default function RecipesPage() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function toggleFavorite(recipe: Recipe) {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      setMessage("Please log in before favoriting recipes.");
+      return;
+    }
+
+    const isFavorite = favoriteRecipeIds.has(recipe.id);
+
+    if (isFavorite) {
+      const { error } = await supabase
+        .from("user_recipe_favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("recipe_id", recipe.id);
+
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+
+      setFavoriteRecipeIds((current) => {
+        const next = new Set(current);
+        next.delete(recipe.id);
+        return next;
+      });
+      return;
+    }
+
+    const { error } = await supabase
+      .from("user_recipe_favorites")
+      .insert({
+        user_id: user.id,
+        recipe_id: recipe.id,
+      });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setFavoriteRecipeIds((current) => new Set(current).add(recipe.id));
+  }
+
+  async function customizeRecipe(recipe: Recipe) {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      setMessage("Please log in before customizing recipes.");
+      return;
+    }
+
+    const customizedName = window.prompt(
+      "Name your customized recipe",
+      `${recipe.name} (My version)`,
+    );
+
+    if (customizedName === null) {
+      return;
+    }
+
+    const { error } = await supabase.rpc("fork_public_recipe", {
+      source_recipe_id: recipe.id,
+      customized_name: customizedName.trim() || null,
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setActiveLibraryTab("mine");
+    setMessage("Private customized copy created.");
+    await loadRecipes();
   }
 
   async function deleteRecipe(recipeId: string) {
@@ -1030,6 +1167,37 @@ export default function RecipesPage() {
     await loadRecipes();
   }
 
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+
+  const visibleRecipes = recipes.filter((recipe) => {
+    const isInActiveTab =
+      activeLibraryTab === "favorites"
+        ? favoriteRecipeIds.has(recipe.id)
+        : activeLibraryTab === "mine"
+          ? recipe.user_id === currentUserId
+          : recipe.is_public;
+
+    if (!isInActiveTab) {
+      return false;
+    }
+
+    if (!normalizedSearchQuery) {
+      return true;
+    }
+
+    const searchableText = [
+      recipe.name,
+      recipe.description,
+      recipe.creator_name,
+      ...recipe.meal_types,
+      ...recipe.recipe_ingredients.map((ingredient) => ingredient.name),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return searchableText.includes(normalizedSearchQuery);
+  });
+
   return (
     <>
       <header className="page-header">
@@ -1039,8 +1207,8 @@ export default function RecipesPage() {
           <h1>Recipes</h1>
 
           <p className="subtitle">
-            Add ingredients, cooking steps, storage rules, and batch limits for
-            each dish.
+            Discover public recipes, save favorites, and create private
+            customized versions without changing the shared original.
           </p>
         </div>
 
@@ -1052,6 +1220,73 @@ export default function RecipesPage() {
           Add recipe
         </button>
       </header>
+
+      <div className="recipe-library-tabs" role="tablist" aria-label="Recipe library">
+        <button
+          className={`recipe-library-tab ${activeLibraryTab === "discover" ? "active" : ""}`}
+          onClick={() => setActiveLibraryTab("discover")}
+          role="tab"
+          type="button"
+        >
+          Discover
+        </button>
+
+        <button
+          className={`recipe-library-tab ${activeLibraryTab === "favorites" ? "active" : ""}`}
+          onClick={() => setActiveLibraryTab("favorites")}
+          role="tab"
+          type="button"
+        >
+          Favorites ({favoriteRecipeIds.size})
+        </button>
+
+        <button
+          className={`recipe-library-tab ${activeLibraryTab === "mine" ? "active" : ""}`}
+          onClick={() => setActiveLibraryTab("mine")}
+          role="tab"
+          type="button"
+        >
+          My recipes
+        </button>
+      </div>
+
+      <div className="recipe-search-row">
+        <label className="recipe-search-field">
+          <span className="sr-only">Search recipes</span>
+          <span className="recipe-search-icon" aria-hidden="true">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.2-3.2" />
+            </svg>
+          </span>
+          <input
+            aria-label="Search recipes"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search recipes, ingredients, meal types, or creators"
+            type="search"
+            value={searchQuery}
+          />
+        </label>
+
+        {searchQuery ? (
+          <button
+            className="recipe-search-clear"
+            onClick={() => setSearchQuery("")}
+            type="button"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
 
       {message && !isFormOpen ? (
         <p className="form-error" role="alert">
@@ -1070,15 +1305,19 @@ export default function RecipesPage() {
           <article className="panel">
             <p>Loading recipes...</p>
           </article>
-        ) : recipes.length === 0 ? (
+        ) : visibleRecipes.length === 0 ? (
           <article className="panel empty-state">
-            <strong>No recipes yet</strong>
+            <strong>{searchQuery ? "No matching recipes" : "No recipes in this view"}</strong>
 
-            <p>Add your first recipe to begin building your meal library.</p>
+            <p>
+              {searchQuery
+                ? "Try a different recipe name, ingredient, meal type, or creator."
+                : "Try another tab or add a new public recipe."}
+            </p>
           </article>
         ) : (
           mealTypeOptions.map((mealType) => {
-            const mealRecipes = recipes
+            const mealRecipes = visibleRecipes
               .filter((recipe) => recipe.meal_types.includes(mealType))
               .sort((first, second) => first.name.localeCompare(second.name));
 
@@ -1189,6 +1428,12 @@ export default function RecipesPage() {
                                 recipe.cleanup_minutes}{" "}
                               min
                             </p>
+
+                            {recipe.is_public ? (
+                              <p className="recipe-creator-line">
+                                By {recipe.creator_name || "Unknown cook"}
+                              </p>
+                            ) : null}
                           </div>
 
                           <span
@@ -1221,24 +1466,66 @@ export default function RecipesPage() {
                               </p>
 
                               <h2>{recipe.name}</h2>
+
+                              {recipe.is_public ? (
+                                <p className="recipe-creator-line">
+                                  Created by {recipe.creator_name || "Unknown cook"}
+                                </p>
+                              ) : null}
                             </div>
 
                             <div className="recipe-card-actions">
-                              <button
-                                className="text-button"
-                                onClick={() => openEditRecipe(recipe)}
-                                type="button"
-                              >
-                                Edit
-                              </button>
+                              {recipe.is_public ? (
+                                <button
+                                  aria-label={
+                                    favoriteRecipeIds.has(recipe.id)
+                                      ? `Remove ${recipe.name} from favorites`
+                                      : `Add ${recipe.name} to favorites`
+                                  }
+                                  className={`recipe-favorite-button ${
+                                    favoriteRecipeIds.has(recipe.id) ? "active" : ""
+                                  }`}
+                                  onClick={() => toggleFavorite(recipe)}
+                                  title={
+                                    favoriteRecipeIds.has(recipe.id)
+                                      ? "Remove from favorites"
+                                      : "Add to favorites"
+                                  }
+                                  type="button"
+                                >
+                                  {favoriteRecipeIds.has(recipe.id) ? "♥" : "♡"}
+                                </button>
+                              ) : null}
 
-                              <button
-                                className="text-button danger-text"
-                                onClick={() => deleteRecipe(recipe.id)}
-                                type="button"
-                              >
-                                Delete
-                              </button>
+                              {recipe.is_public ? (
+                                <button
+                                  className="secondary-button"
+                                  onClick={() => customizeRecipe(recipe)}
+                                  type="button"
+                                >
+                                  Customize
+                                </button>
+                              ) : null}
+
+                              {recipe.user_id === currentUserId ? (
+                                <>
+                                  <button
+                                    className="text-button"
+                                    onClick={() => openEditRecipe(recipe)}
+                                    type="button"
+                                  >
+                                    Edit
+                                  </button>
+
+                                  <button
+                                    className="text-button danger-text"
+                                    onClick={() => deleteRecipe(recipe.id)}
+                                    type="button"
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              ) : null}
                             </div>
                           </div>
 
@@ -1247,6 +1534,15 @@ export default function RecipesPage() {
                           ) : null}
 
                           <div className="recipe-metadata">
+                            <span>
+                              {recipe.is_public
+                                ? "Public recipe"
+                                : "Private customization"}
+                            </span>
+
+                            {recipe.parent_recipe_id ? (
+                              <span>Customized from a public recipe</span>
+                            ) : null}
                             <span>
                               {recipe.default_servings} default servings
                             </span>

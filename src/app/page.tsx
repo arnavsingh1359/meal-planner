@@ -71,17 +71,22 @@ export default function Home() {
 
     try {
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
 
-      if (userError) {
-        throw userError;
+      if (sessionError) {
+        throw sessionError;
       }
+
+      const user = session?.user ?? null;
 
       if (!user) {
         setTasks([]);
         setTodayMeals([]);
+        setWeeklyMealCount(0);
+        setWeeklyRecipeCount(0);
+        setShoppingCount(0);
         return;
       }
 
@@ -170,6 +175,21 @@ export default function Home() {
       );
       setTodayMeals(rows.filter((meal) => meal.day_index === dayIndex));
     } catch (error) {
+      const isMissingSession =
+        error &&
+        typeof error === "object" &&
+        "name" in error &&
+        error.name === "AuthSessionMissingError";
+
+      if (isMissingSession) {
+        setTasks([]);
+        setTodayMeals([]);
+        setWeeklyMealCount(0);
+        setWeeklyRecipeCount(0);
+        setShoppingCount(0);
+        return;
+      }
+
       const details =
         error && typeof error === "object"
           ? JSON.stringify(error, null, 2)
