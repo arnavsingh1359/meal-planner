@@ -1263,7 +1263,13 @@ export default function RecipesPage() {
           role="tab"
           type="button"
         >
-          Favorites ({favoriteRecipeIds.size})
+          <span>Favorites</span>
+          <span
+            className="recipe-library-count"
+            aria-label={`${favoriteRecipeIds.size} favorite recipes`}
+          >
+            {favoriteRecipeIds.size}
+          </span>
         </button>
 
         <button
