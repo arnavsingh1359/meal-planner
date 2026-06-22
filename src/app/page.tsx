@@ -1,253 +1,324 @@
-import type { CSSProperties } from "react";
+"use client";
 
-const todayTasks = [
-  {
-    time: "8:00 AM",
-    title: "Prepare breakfast",
-    detail: "No breakfast selected",
-  },
-  {
-    time: "6:30 PM",
-    title: "Cooking block",
-    detail: "No session planned yet",
-  },
-];
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase/client";
 
-const styles: Record<string, CSSProperties> = {
-  summaryGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "16px",
-    marginBottom: "18px",
-  },
+function pad(value: number) {
+  return String(value).padStart(2, "0");
+}
 
-  summaryCard: {
-    display: "grid",
-    gap: "6px",
-    minWidth: 0,
-    padding: "18px 20px",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-medium)",
-    background: "var(--surface)",
-    boxShadow: "var(--shadow)",
-  },
+function toLocalDateString(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
-  summaryLabel: {
-    color: "var(--muted)",
-    fontSize: "0.78rem",
-    fontWeight: 700,
-  },
+function getMonday(date: Date) {
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  const day = result.getDay();
+  result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day));
+  return result;
+}
 
-  summaryValue: {
-    color: "var(--primary)",
-    fontSize: "1.8rem",
-    lineHeight: 1,
-  },
+function formatTime(value: string | null) {
+  if (!value) {
+    return "Unscheduled";
+  }
 
-  summaryDetail: {
-    color: "var(--muted)",
-    fontSize: "0.72rem",
-    lineHeight: 1.35,
-  },
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
 
-  contentGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "18px",
-    alignItems: "start",
-  },
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
 
-  taskList: {
-    display: "grid",
-    gap: 0,
-  },
+type DashboardTask = {
+  id: string;
+  title: string;
+  source_recipe_name: string;
+  source_meal_type: string;
+  scheduled_start: string | null;
+  status: string;
+  notes: string;
+};
 
-  task: {
-    display: "grid",
-    gridTemplateColumns: "86px 12px minmax(0, 1fr)",
-    alignItems: "start",
-    gap: "12px",
-    padding: "15px 0",
-    borderBottom: "1px solid var(--border)",
-  },
-
-  taskTime: {
-    color: "var(--muted)",
-    fontSize: "0.78rem",
-    fontWeight: 700,
-    lineHeight: 1.4,
-  },
-
-  taskMarker: {
-    width: "10px",
-    height: "10px",
-    marginTop: "4px",
-    borderRadius: "50%",
-    background: "var(--primary)",
-    boxShadow: "0 0 0 4px var(--primary-soft)",
-  },
-
-  taskText: {
-    display: "grid",
-    gap: "4px",
-    minWidth: 0,
-  },
-
-  taskTitle: {
-    fontSize: "0.92rem",
-  },
-
-  taskDetail: {
-    margin: 0,
-    color: "var(--muted)",
-    fontSize: "0.8rem",
-  },
-
-  nextStepPanel: {
-    display: "grid",
-    gap: "8px",
-  },
-
-  noMargin: {
-    marginBottom: 0,
-  },
-
-  mutedParagraph: {
-    marginBottom: 0,
-    color: "var(--muted)",
-  },
+type TodayMeal = {
+  id: string;
+  meal_slot_name: string;
+  meal_time: string;
+  planned_meal_recipes: Array<{ id: string }> | null;
 };
 
 export default function Home() {
+  const [tasks, setTasks] = useState<DashboardTask[]>([]);
+  const [todayMeals, setTodayMeals] = useState<TodayMeal[]>([]);
+  const [weeklyMealCount, setWeeklyMealCount] = useState(0);
+  const [weeklyRecipeCount, setWeeklyRecipeCount] = useState(0);
+  const [shoppingCount, setShoppingCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  useEffect(() => {
+    void loadDashboard();
+  }, []);
+
+  async function loadDashboard() {
+    setIsLoading(true);
+    setErrorMessage("");
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        setTasks([]);
+        setTodayMeals([]);
+        return;
+      }
+
+      const today = new Date();
+      const todayString = toLocalDateString(today);
+      const weekStartString = toLocalDateString(getMonday(today));
+      const day = today.getDay();
+      const dayIndex = day === 0 ? 6 : day - 1;
+
+      const { data: weeklyPlan, error: planError } = await supabase
+        .from("weekly_plans")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("week_start", weekStartString)
+        .maybeSingle();
+
+      if (planError) {
+        throw planError;
+      }
+
+      const [taskResult, shoppingResult] = await Promise.all([
+        supabase
+          .from("scheduled_tasks")
+          .select(`
+            id,
+            title,
+            source_recipe_name,
+            source_meal_type,
+            scheduled_start,
+            status,
+            notes
+          `)
+          .eq("user_id", user.id)
+          .eq("scheduled_date", todayString)
+          .in("status", ["pending", "in_progress"])
+          .order("scheduled_start", { ascending: true, nullsFirst: false }),
+        supabase
+          .from("shopping_items")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+          .eq("is_purchased", false),
+      ]);
+
+      if (taskResult.error) {
+        throw taskResult.error;
+      }
+
+      if (shoppingResult.error) {
+        throw shoppingResult.error;
+      }
+
+      setTasks((taskResult.data ?? []) as DashboardTask[]);
+      setShoppingCount(shoppingResult.count ?? 0);
+
+      if (!weeklyPlan) {
+        setTodayMeals([]);
+        setWeeklyMealCount(0);
+        setWeeklyRecipeCount(0);
+        return;
+      }
+
+      const { data: plannedMeals, error: mealsError } = await supabase
+        .from("planned_meals")
+        .select(`
+          id,
+          day_index,
+          meal_slot_name,
+          meal_time,
+          planned_meal_recipes (id)
+        `)
+        .eq("weekly_plan_id", weeklyPlan.id)
+        .order("day_index")
+        .order("meal_time");
+
+      if (mealsError) {
+        throw mealsError;
+      }
+
+      const rows = (plannedMeals ?? []) as Array<TodayMeal & { day_index: number }>;
+      setWeeklyMealCount(rows.length);
+      setWeeklyRecipeCount(
+        rows.reduce(
+          (total, meal) => total + Math.max(meal.planned_meal_recipes?.length ?? 0, 1),
+          0,
+        ),
+      );
+      setTodayMeals(rows.filter((meal) => meal.day_index === dayIndex));
+    } catch (error) {
+      const details =
+        error && typeof error === "object"
+          ? JSON.stringify(error, null, 2)
+          : String(error);
+
+      console.error(
+        "Could not load dashboard:",
+        details,
+      );
+
+      const message =
+        error &&
+        typeof error === "object" &&
+        "message" in error &&
+        typeof error.message === "string"
+          ? error.message
+          : "Could not load the dashboard.";
+
+      setErrorMessage(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const unscheduledCount = useMemo(
+    () => tasks.filter((task) => task.scheduled_start === null).length,
+    [tasks],
+  );
+
   return (
     <>
       <header className="page-header">
         <div>
           <p className="eyebrow">Today</p>
-
           <h1>Your kitchen dashboard</h1>
-
           <p className="subtitle">
-            Once your weekly menu is created, today&apos;s preparation and
-            cooking tasks will appear here.
+            See today&apos;s meals, preparation tasks, and anything that still needs attention.
           </p>
         </div>
       </header>
 
-      <section
-        style={styles.summaryGrid}
-        aria-label="Weekly summary"
-      >
-        <article style={styles.summaryCard}>
-          <span style={styles.summaryLabel}>
-            Meals planned
-          </span>
+      {errorMessage ? <p className="form-error">{errorMessage}</p> : null}
 
-          <strong style={styles.summaryValue}>
-            0
-          </strong>
+      <section className="dashboard-summary-grid" aria-label="Weekly summary">
+        <article className="dashboard-summary-card">
+          <span>Meal slots planned</span>
+          <strong>{weeklyMealCount}</strong>
+          <small>{weeklyRecipeCount} selected recipes this week</small>
+        </article>
 
-          <small style={styles.summaryDetail}>
-            of 28 meal slots
+        <article className="dashboard-summary-card">
+          <span>Tasks remaining today</span>
+          <strong>{tasks.length}</strong>
+          <small>
+            {unscheduledCount > 0
+              ? `${unscheduledCount} need manual placement`
+              : "All generated tasks have a time"}
           </small>
         </article>
 
-        <article style={styles.summaryCard}>
-          <span style={styles.summaryLabel}>
-            Cooking sessions
-          </span>
-
-          <strong style={styles.summaryValue}>
-            0
-          </strong>
-
-          <small style={styles.summaryDetail}>
-            No schedule generated
-          </small>
-        </article>
-
-        <article style={styles.summaryCard}>
-          <span style={styles.summaryLabel}>
-            Shopping items
-          </span>
-
-          <strong style={styles.summaryValue}>
-            0
-          </strong>
-
-          <small style={styles.summaryDetail}>
-            Pantry not reviewed
-          </small>
+        <article className="dashboard-summary-card">
+          <span>Shopping items remaining</span>
+          <strong>{shoppingCount}</strong>
+          <small>Unchecked items on your current lists</small>
         </article>
       </section>
 
-      <section style={styles.contentGrid}>
-        <article className="panel">
+      <section className="dashboard-content-grid">
+        <article className="panel dashboard-panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">
-                Schedule
-              </p>
-
-              <h2 style={styles.noMargin}>
-                Today&apos;s tasks
-              </h2>
+              <p className="eyebrow">Schedule</p>
+              <h2>Today&apos;s tasks</h2>
             </div>
+            <Link className="text-button" href="/schedule">
+              Open schedule
+            </Link>
           </div>
 
-          <div style={styles.taskList}>
-            {todayTasks.map((task, index) => (
-              <div
-                key={`${task.time}-${task.title}`}
-                style={{
-                  ...styles.task,
-                  ...(index === todayTasks.length - 1
-                    ? { borderBottom: "none" }
-                    : {}),
-                }}
-              >
-                <div style={styles.taskTime}>
-                  {task.time}
-                </div>
-
-                <div
-                  style={styles.taskMarker}
-                  aria-hidden="true"
-                />
-
-                <div style={styles.taskText}>
-                  <strong style={styles.taskTitle}>
-                    {task.title}
+          {isLoading ? (
+            <p className="muted-placeholder">Loading tasks…</p>
+          ) : tasks.length === 0 ? (
+            <div className="empty-state dashboard-empty-state">
+              <strong>No pending tasks today</strong>
+              <p>Generate a schedule after planning your meals.</p>
+            </div>
+          ) : (
+            <div className="dashboard-task-list">
+              {tasks.map((task) => (
+                <article
+                  className={
+                    task.scheduled_start === null
+                      ? "dashboard-task dashboard-task-unscheduled"
+                      : "dashboard-task"
+                  }
+                  key={task.id}
+                >
+                  <strong className="dashboard-task-time">
+                    {formatTime(task.scheduled_start)}
                   </strong>
-
-                  <p style={styles.taskDetail}>
-                    {task.detail}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <div>
+                    <strong>{task.title}</strong>
+                    <p>
+                      {task.source_recipe_name}
+                      {task.source_meal_type ? ` · ${task.source_meal_type}` : ""}
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </article>
 
-        <article
-          className="panel"
-          style={styles.nextStepPanel}
-        >
-          <p
-            className="eyebrow"
-            style={styles.noMargin}
-          >
-            Getting started
-          </p>
+        <article className="panel dashboard-panel">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">Meals</p>
+              <h2>Today&apos;s plan</h2>
+            </div>
+            <Link className="text-button" href="/week">
+              Edit week
+            </Link>
+          </div>
 
-          <h2 style={styles.noMargin}>
-            Create your first weekly plan
-          </h2>
-
-          <p style={styles.mutedParagraph}>
-            Select meals for each day, enter your cooking blocks, and later
-            generate an optimized preparation schedule.
-          </p>
+          {isLoading ? (
+            <p className="muted-placeholder">Loading meals…</p>
+          ) : todayMeals.length === 0 ? (
+            <div className="empty-state dashboard-empty-state">
+              <strong>No meals selected today</strong>
+              <p>Add recipes to today&apos;s meal slots in the Week page.</p>
+            </div>
+          ) : (
+            <div className="dashboard-meal-list">
+              {todayMeals.map((meal) => (
+                <article className="dashboard-meal" key={meal.id}>
+                  <div>
+                    <strong>{meal.meal_slot_name}</strong>
+                    <small>{formatTime(meal.meal_time)}</small>
+                  </div>
+                  <span>
+                    {Math.max(meal.planned_meal_recipes?.length ?? 0, 1)} recipe
+                    {Math.max(meal.planned_meal_recipes?.length ?? 0, 1) === 1
+                      ? ""
+                      : "s"}
+                  </span>
+                </article>
+              ))}
+            </div>
+          )}
         </article>
       </section>
     </>

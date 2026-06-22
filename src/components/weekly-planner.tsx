@@ -2,50 +2,28 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { finalizeWeek } from "@/lib/week-sync";
+import {
+  dayKeyFromIndex,
+  dayKeys,
+  dayLabels,
+  defaultUserSettings,
+  mealCategoryLabels,
+  normalizeUserSettings,
+  resolveDaySettings,
+  type MealCategory,
+  type MealSlotSetting,
+  type UserSettings,
+} from "@/lib/user-settings";
 
-const days = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-] as const;
-
-const mealTypes = [
-  "Breakfast",
-  "Lunch",
-  "Dinner",
-  "Snack",
-] as const;
-
-const cookingBlockTypes = [
-  {
-    value: "light",
-    label: "Light preparation",
-    description:
-      "Assembly, chopping, reheating, or a very quick recipe.",
-  },
-  {
-    value: "normal",
-    label: "Normal cooking",
-    description:
-      "One or two regular recipes.",
-  },
-  {
-    value: "batch",
-    label: "Batch cooking",
-    description:
-      "A longer session intended to prepare several meals.",
-  },
-] as const;
-
-type Day = (typeof days)[number];
-type MealType = (typeof mealTypes)[number];
-
-type CookingBlockType =
-  (typeof cookingBlockTypes)[number]["value"];
+const days = dayKeys.map((day) => dayLabels[day]);
+const recipeTabs: Array<MealCategory | "all"> = [
+  "breakfast",
+  "lunch",
+  "dinner",
+  "snack",
+  "all",
+];
 
 type Recipe = {
   id: string;
@@ -57,321 +35,144 @@ type Recipe = {
   cooking_minutes: number;
 };
 
-type MealSlotKey = `${number}-${MealType}`;
-
-type PlannedMeal = {
+type PlannedMealRecipe = {
   id: string;
   recipeId: string;
   servings: number;
+  position: number;
 };
 
-type WeeklyPlan = Partial<
-  Record<MealSlotKey, PlannedMeal>
->;
+type PlannedMeal = {
+  id: string;
+  dayIndex: number;
+  slotId: string;
+  slotName: string;
+  category: MealCategory;
+  mealTime: string;
+  readyByTime: string;
+  preparationMode: string;
+  recipes: PlannedMealRecipe[];
+};
+
+type WeeklyPlan = Record<string, PlannedMeal>;
 
 type SelectedSlot = {
   dayIndex: number;
-  mealType: MealType;
+  slot: MealSlotSetting;
 } | null;
-
-type CookingBlock = {
-  id: string;
-  dayIndex: number;
-  startTime: string;
-  endTime: string;
-  type: CookingBlockType;
-  notes: string;
-};
-
-type CookingBlockForm = Omit<
-  CookingBlock,
-  "id"
->;
 
 type WeeklyPlanRow = {
   id: string;
   week_start: string;
 };
 
-type PlannedMealRow = {
+type PlannedMealRecipeRow = {
   id: string;
   recipe_id: string;
-  day_index: number;
-  meal_type: MealType;
   servings: number;
+  position: number;
 };
 
-type CookingBlockRow = {
+type PlannedMealRow = {
   id: string;
+  recipe_id: string | null;
   day_index: number;
-  start_time: string;
-  end_time: string;
-  block_type: CookingBlockType;
-  notes: string;
+  meal_type: string;
+  servings: number | null;
+  meal_slot_id: string | null;
+  meal_slot_name: string | null;
+  meal_category: string | null;
+  meal_time: string | null;
+  ready_by_time: string | null;
+  preparation_mode: string | null;
+  planned_meal_recipes: PlannedMealRecipeRow[] | null;
 };
 
-const emptyCookingBlockForm: CookingBlockForm = {
-  dayIndex: 6,
-  startTime: "16:00",
-  endTime: "18:00",
-  type: "batch",
-  notes: "",
-};
-
-function makeSlotKey(
-  dayIndex: number,
-  mealType: MealType,
-): MealSlotKey {
-  return `${dayIndex}-${mealType}`;
+function slotKey(dayIndex: number, slotId: string) {
+  return `${dayIndex}::${slotId}`;
 }
 
-function padNumber(value: number) {
+function pad(value: number) {
   return String(value).padStart(2, "0");
 }
 
 function toDateString(date: Date) {
-  return [
-    date.getFullYear(),
-    padNumber(date.getMonth() + 1),
-    padNumber(date.getDate()),
-  ].join("-");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function fromDateString(value: string) {
-  const [year, month, day] = value
-    .split("-")
-    .map(Number);
-
+  const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
 function getMonday(date: Date) {
   const result = new Date(date);
-
   result.setHours(0, 0, 0, 0);
-
   const day = result.getDay();
-  const difference = day === 0 ? -6 : 1 - day;
-
-  result.setDate(result.getDate() + difference);
-
+  result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day));
   return result;
 }
 
-function addDays(date: Date, numberOfDays: number) {
+function addDays(date: Date, amount: number) {
   const result = new Date(date);
-
-  result.setDate(result.getDate() + numberOfDays);
-
+  result.setDate(result.getDate() + amount);
   return result;
 }
 
-function addWeeks(date: Date, numberOfWeeks: number) {
-  return addDays(date, numberOfWeeks * 7);
+function formatWeekRange(start: Date) {
+  const end = addDays(start, 6);
+  const startText = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(start);
+  const endText = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(end);
+  return `${startText} – ${endText}`;
 }
 
-function formatWeekRange(weekStart: Date) {
-  const weekEnd = addDays(weekStart, 6);
-
-  const startFormatter = new Intl.DateTimeFormat(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-    },
-  );
-
-  const endFormatter = new Intl.DateTimeFormat(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    },
-  );
-
-  return `${startFormatter.format(
-    weekStart,
-  )} – ${endFormatter.format(weekEnd)}`;
-}
-
-function formatDayDate(
-  weekStart: Date,
-  dayIndex: number,
-) {
+function formatDayDate(start: Date, dayIndex: number) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
-  }).format(addDays(weekStart, dayIndex));
+  }).format(addDays(start, dayIndex));
 }
 
-function timeToMinutes(time: string) {
-  if (!time || !time.includes(":")) {
-    return Number.NaN;
-  }
-
-  const [hoursText, minutesText] =
-    time.split(":");
-
-  const hours = Number(hoursText);
-  const minutes = Number(minutesText);
-
-  if (
-    !Number.isFinite(hours) ||
-    !Number.isFinite(minutes)
-  ) {
-    return Number.NaN;
-  }
-
-  return hours * 60 + minutes;
+function formatTime(value: string) {
+  const [hours, minutes] = value.slice(0, 5).split(":").map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
 }
 
-function normalizeDatabaseTime(time: string) {
-  if (!time) {
-    return "";
-  }
-
-  return time.slice(0, 5);
-}
-
-function formatTime(time: string) {
-  const normalized = normalizeDatabaseTime(time);
-
-  if (!normalized.includes(":")) {
-    return "Time not set";
-  }
-
-  const [hoursText, minutesText] =
-    normalized.split(":");
-
-  const hours = Number(hoursText);
-
-  if (
-    !Number.isInteger(hours) ||
-    !minutesText
-  ) {
-    return "Time not set";
-  }
-
-  const displayHours = hours % 12 || 12;
-  const period = hours >= 12 ? "PM" : "AM";
-
-  return `${displayHours}:${minutesText} ${period}`;
-}
-
-function getBlockDuration(
-  startTime: string,
-  endTime: string,
-) {
-  return (
-    timeToMinutes(endTime) -
-    timeToMinutes(startTime)
-  );
-}
-
-function formatDuration(totalMinutes: number) {
-  if (
-    !Number.isFinite(totalMinutes) ||
-    totalMinutes <= 0
-  ) {
-    return "0 min";
-  }
-
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  if (hours === 0) {
-    return `${minutes} min`;
-  }
-
-  if (minutes === 0) {
-    return `${hours} hr`;
-  }
-
-  return `${hours} hr ${minutes} min`;
-}
-
-function sortCookingBlocks(
-  blocks: CookingBlock[],
-) {
-  return [...blocks].sort((first, second) => {
-    if (first.dayIndex !== second.dayIndex) {
-      return first.dayIndex - second.dayIndex;
-    }
-
-    return (
-      timeToMinutes(first.startTime) -
-      timeToMinutes(second.startTime)
-    );
-  });
+function normalizeTime(value: string | null, fallback: string) {
+  return value ? value.slice(0, 5) : fallback;
 }
 
 export default function WeeklyPlanner() {
-  const [recipes, setRecipes] =
-    useState<Recipe[]>([]);
-
-  const [recipesLoading, setRecipesLoading] =
-    useState(true);
-
-  const [weeklyPlan, setWeeklyPlan] =
-    useState<WeeklyPlan>({});
-
-  const [cookingBlocks, setCookingBlocks] =
-    useState<CookingBlock[]>([]);
-
-  const [weekStart, setWeekStart] =
-    useState<Date>(() => getMonday(new Date()));
-
-  const [weeklyPlanId, setWeeklyPlanId] =
-    useState<string | null>(null);
-
-  const [selectedSlot, setSelectedSlot] =
-    useState<SelectedSlot>(null);
-
-  const [
-    selectedRecipeId,
-    setSelectedRecipeId,
-  ] = useState("");
-
-  const [servings, setServings] =
-    useState(1);
-
-  const [
-    isCookingBlockModalOpen,
-    setIsCookingBlockModalOpen,
-  ] = useState(false);
-
-  const [
-    editingCookingBlockId,
-    setEditingCookingBlockId,
-  ] = useState<string | null>(null);
-
-  const [
-    cookingBlockForm,
-    setCookingBlockForm,
-  ] = useState<CookingBlockForm>({
-    ...emptyCookingBlockForm,
-  });
-
-  const [
-    cookingBlockError,
-    setCookingBlockError,
-  ] = useState("");
-
-  const [isLoadingWeek, setIsLoadingWeek] =
-    useState(true);
-
-  const [isSaving, setIsSaving] =
-    useState(false);
-
-  const [statusMessage, setStatusMessage] =
-    useState("");
-
-  const [errorMessage, setErrorMessage] =
-    useState("");
+  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
+  const [weeklyPlanId, setWeeklyPlanId] = useState<string | null>(null);
+  const [weeklyPlan, setWeeklyPlan] = useState<WeeklyPlan>({});
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [settings, setSettings] = useState<UserSettings>(defaultUserSettings);
+  const [selectedSlot, setSelectedSlot] = useState<SelectedSlot>(null);
+  const [selectedRecipes, setSelectedRecipes] = useState<Record<string, number>>({});
+  const [activeRecipeTab, setActiveRecipeTab] = useState<MealCategory | "all">("breakfast");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isCopyingPrevious, setIsCopyingPrevious] = useState(false);
+  const [message, setMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    void loadRecipes();
+    void loadBaseData();
   }, []);
 
   useEffect(() => {
@@ -380,92 +181,93 @@ export default function WeeklyPlanner() {
 
   async function getCurrentUser() {
     const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    if (sessionError) {
-      throw sessionError;
-    }
-
-    if (!session) {
-      return null;
-    }
-
-    const {
       data: { user },
-      error: userError,
+      error,
     } = await supabase.auth.getUser();
 
-    if (userError) {
-      throw userError;
+    if (error) {
+      throw error;
     }
 
     return user;
   }
 
-  async function loadRecipes() {
-    setRecipesLoading(true);
+  async function loadBaseData() {
+    try {
+      const user = await getCurrentUser();
 
-    const { data, error } = await supabase
-      .from("recipes")
-      .select(`
-        id,
-        name,
-        description,
-        meal_types,
-        default_servings,
-        preparation_minutes,
-        cooking_minutes
-      `)
-      .order("name", {
-        ascending: true,
-      });
+      if (!user) {
+        return;
+      }
 
-    if (error) {
-      console.error(
-        "Could not load recipes:",
-        error,
+      const [recipesResult, settingsResult] = await Promise.all([
+        supabase
+          .from("recipes")
+          .select(`
+            id,
+            name,
+            description,
+            meal_types,
+            default_servings,
+            preparation_minutes,
+            cooking_minutes
+          `)
+          .eq("user_id", user.id)
+          .order("name"),
+        supabase
+          .from("user_settings")
+          .select(`
+            conflict_grouping_minutes,
+            preferred_batch_day,
+            preferred_batch_days,
+            preserve_manual_tasks,
+            day_settings
+          `)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ]);
+
+      if (recipesResult.error) {
+        throw recipesResult.error;
+      }
+
+      if (settingsResult.error) {
+        throw settingsResult.error;
+      }
+
+      setRecipes((recipesResult.data ?? []) as Recipe[]);
+      setSettings(
+        settingsResult.data
+          ? normalizeUserSettings(settingsResult.data)
+          : defaultUserSettings,
       );
-
-      setErrorMessage(error.message);
-      setRecipesLoading(false);
-      return;
+    } catch (error) {
+      console.error("Could not load planner data:", error);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not load planner data.",
+      );
     }
-
-    setRecipes((data ?? []) as Recipe[]);
-    setRecipesLoading(false);
   }
 
-  async function loadWeek(
-    requestedWeekStart: Date,
-  ) {
-    setIsLoadingWeek(true);
+  async function loadWeek(start: Date) {
+    setIsLoading(true);
     setErrorMessage("");
-    setStatusMessage("Loading week…");
+    setMessage("");
 
     try {
       const user = await getCurrentUser();
 
       if (!user) {
-        setWeeklyPlanId(null);
         setWeeklyPlan({});
-        setCookingBlocks([]);
-        setStatusMessage("");
+        setWeeklyPlanId(null);
         return;
       }
 
-      const weekStartString =
-        toDateString(requestedWeekStart);
-
-      const {
-        data: planData,
-        error: planError,
-      } = await supabase
+      const { data: planData, error: planError } = await supabase
         .from("weekly_plans")
         .select("id, week_start")
         .eq("user_id", user.id)
-        .eq("week_start", weekStartString)
+        .eq("week_start", toDateString(start))
         .maybeSingle();
 
       if (planError) {
@@ -473,1006 +275,689 @@ export default function WeeklyPlanner() {
       }
 
       if (!planData) {
-        setWeeklyPlanId(null);
         setWeeklyPlan({});
-        setCookingBlocks([]);
-        setStatusMessage(
-          "No plan saved for this week.",
-        );
+        setWeeklyPlanId(null);
+        setMessage("No plan saved for this week.");
         return;
       }
 
       const plan = planData as WeeklyPlanRow;
-
       setWeeklyPlanId(plan.id);
 
-      const [
-        plannedMealsResult,
-        cookingBlocksResult,
-      ] = await Promise.all([
-        supabase
-          .from("planned_meals")
-          .select(`
+      const { data, error } = await supabase
+        .from("planned_meals")
+        .select(`
+          id,
+          recipe_id,
+          day_index,
+          meal_type,
+          servings,
+          meal_slot_id,
+          meal_slot_name,
+          meal_category,
+          meal_time,
+          ready_by_time,
+          preparation_mode,
+          planned_meal_recipes (
             id,
             recipe_id,
-            day_index,
-            meal_type,
-            servings
-          `)
-          .eq("weekly_plan_id", plan.id),
-
-        supabase
-          .from("cooking_blocks")
-          .select(`
-            id,
-            day_index,
-            start_time,
-            end_time,
-            block_type,
-            notes
-          `)
-          .eq("weekly_plan_id", plan.id)
-          .order("day_index", {
-            ascending: true,
-          })
-          .order("start_time", {
-            ascending: true,
-          }),
-      ]);
-
-      if (plannedMealsResult.error) {
-        throw plannedMealsResult.error;
-      }
-
-      if (cookingBlocksResult.error) {
-        throw cookingBlocksResult.error;
-      }
-
-      const meals: WeeklyPlan = {};
-
-      (
-        (plannedMealsResult.data ??
-          []) as PlannedMealRow[]
-      ).forEach((meal) => {
-        meals[
-          makeSlotKey(
-            meal.day_index,
-            meal.meal_type,
+            servings,
+            position
           )
-        ] = {
-          id: meal.id,
-          recipeId: meal.recipe_id,
-          servings: meal.servings,
+        `)
+        .eq("weekly_plan_id", plan.id);
+
+      if (error) {
+        throw error;
+      }
+
+      const nextPlan: WeeklyPlan = {};
+
+      for (const row of (data ?? []) as PlannedMealRow[]) {
+        const fallbackCategory = row.meal_type.toLowerCase() as MealCategory;
+        const joined = [...(row.planned_meal_recipes ?? [])].sort(
+          (a, b) => a.position - b.position,
+        );
+        const normalizedRecipes =
+          joined.length > 0
+            ? joined.map((item) => ({
+                id: item.id,
+                recipeId: item.recipe_id,
+                servings: item.servings,
+                position: item.position,
+              }))
+            : row.recipe_id
+              ? [
+                  {
+                    id: `legacy-${row.id}`,
+                    recipeId: row.recipe_id,
+                    servings: row.servings ?? 1,
+                    position: 0,
+                  },
+                ]
+              : [];
+
+        const id = row.meal_slot_id ?? fallbackCategory;
+        nextPlan[slotKey(row.day_index, id)] = {
+          id: row.id,
+          dayIndex: row.day_index,
+          slotId: id,
+          slotName: row.meal_slot_name ?? row.meal_type,
+          category: (row.meal_category ?? fallbackCategory) as MealCategory,
+          mealTime: normalizeTime(row.meal_time, "12:00"),
+          readyByTime: normalizeTime(row.ready_by_time, "12:00"),
+          preparationMode: row.preparation_mode ?? "fresh",
+          recipes: normalizedRecipes,
         };
-      });
+      }
 
-      const blocks = (
-        (cookingBlocksResult.data ??
-          []) as CookingBlockRow[]
-      ).map((block) => ({
-        id: block.id,
-        dayIndex: block.day_index,
-        startTime: normalizeDatabaseTime(
-          block.start_time,
-        ),
-        endTime: normalizeDatabaseTime(
-          block.end_time,
-        ),
-        type: block.block_type,
-        notes: block.notes,
-      }));
-
-      setWeeklyPlan(meals);
-      setCookingBlocks(
-        sortCookingBlocks(blocks),
-      );
-
-      setStatusMessage(
-        "Week loaded from Supabase.",
-      );
+      setWeeklyPlan(nextPlan);
+      setMessage("Week loaded.");
     } catch (error) {
-      console.error(
-        "Could not load week:",
-        error,
-      );
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not load this week.",
-      );
-
-      setWeeklyPlanId(null);
+      console.error("Could not load week:", error);
       setWeeklyPlan({});
-      setCookingBlocks([]);
+      setWeeklyPlanId(null);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not load this week.",
+      );
     } finally {
-      setIsLoadingWeek(false);
+      setIsLoading(false);
     }
   }
+
   async function ensureWeeklyPlan() {
     if (weeklyPlanId) {
       return weeklyPlanId;
     }
 
     const user = await getCurrentUser();
+
     if (!user) {
-
-    throw new Error(
-
-      "Please log in before saving a weekly plan.",
-
-    );
-
-  }
-
-  const weekStartString =
-    toDateString(weekStart);
-
-    const {
-      data: existingPlan,
-      error: existingPlanError,
-    } = await supabase
-      .from("weekly_plans")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("week_start", weekStartString)
-      .maybeSingle();
-
-    if (existingPlanError) {
-      throw existingPlanError;
+      throw new Error("Please log in before editing the week.");
     }
 
-    if (existingPlan) {
-      setWeeklyPlanId(existingPlan.id);
-      return existingPlan.id;
-    }
-
-    const {
-      data: insertedPlan,
-      error: insertError,
-    } = await supabase
+    const { data, error } = await supabase
       .from("weekly_plans")
-      .insert({
-        user_id: user.id,
-        week_start: weekStartString,
-      })
+      .upsert(
+        {
+          user_id: user.id,
+          week_start: toDateString(weekStart),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,week_start" },
+      )
       .select("id")
       .single();
 
-    if (insertError) {
-      throw insertError;
+    if (error) {
+      throw error;
     }
 
-    setWeeklyPlanId(insertedPlan.id);
-
-    return insertedPlan.id;
+    setWeeklyPlanId(data.id);
+    return data.id as string;
   }
 
-  const compatibleRecipes = useMemo(() => {
-    if (!selectedSlot) {
-      return [];
+  function openPicker(dayIndex: number, slot: MealSlotSetting) {
+    const existing = weeklyPlan[slotKey(dayIndex, slot.id)];
+    const selections: Record<string, number> = {};
+
+    for (const plannedRecipe of existing?.recipes ?? []) {
+      selections[plannedRecipe.recipeId] = plannedRecipe.servings;
     }
 
-    return recipes.filter((recipe) =>
-      recipe.meal_types.includes(
-        selectedSlot.mealType,
-      ),
-    );
-  }, [recipes, selectedSlot]);
+    setSelectedSlot({ dayIndex, slot });
+    setSelectedRecipes(selections);
+    setActiveRecipeTab(slot.meal_type === "any" ? "all" : slot.meal_type);
+    setSearchQuery("");
+    setErrorMessage("");
+  }
 
-  const selectedRecipe = recipes.find(
-    (recipe) =>
-      recipe.id === selectedRecipeId,
-  );
-
-  const numberOfPlannedMeals =
-    Object.keys(weeklyPlan).length;
-
-  const totalCookingMinutes =
-    cookingBlocks.reduce((total, block) => {
-      const duration = getBlockDuration(
-        block.startTime,
-        block.endTime,
-      );
-
-      return (
-        total +
-        (Number.isFinite(duration)
-          ? Math.max(0, duration)
-          : 0)
-      );
-    }, 0);
-
-  function openMealPicker(
-    dayIndex: number,
-    mealType: MealType,
-  ) {
-    const slotKey = makeSlotKey(
-      dayIndex,
-      mealType,
-    );
-
-    const currentMeal =
-      weeklyPlan[slotKey];
-
-    setSelectedSlot({
-      dayIndex,
-      mealType,
-    });
-
-    if (currentMeal) {
-      setSelectedRecipeId(
-        currentMeal.recipeId,
-      );
-
-      setServings(
-        currentMeal.servings,
-      );
-
+  function closePicker() {
+    if (isSaving) {
       return;
     }
 
-    const firstCompatibleRecipe =
-      recipes.find((recipe) =>
-        recipe.meal_types.includes(mealType),
-      );
-
-    setSelectedRecipeId(
-      firstCompatibleRecipe?.id ?? "",
-    );
-
-    setServings(
-      firstCompatibleRecipe?.default_servings ??
-        1,
-    );
-  }
-
-  function closeMealPicker() {
     setSelectedSlot(null);
-    setSelectedRecipeId("");
-    setServings(1);
+    setSelectedRecipes({});
+    setSearchQuery("");
   }
 
-  function chooseRecipe(recipe: Recipe) {
-    setSelectedRecipeId(recipe.id);
-    setServings(recipe.default_servings);
+  function toggleRecipe(recipe: Recipe) {
+    setSelectedRecipes((current) => {
+      if (current[recipe.id]) {
+        const next = { ...current };
+        delete next[recipe.id];
+        return next;
+      }
+
+      return {
+        ...current,
+        [recipe.id]: Math.max(recipe.default_servings, 1),
+      };
+    });
   }
+
+  function updateServings(recipeId: string, servings: number) {
+    setSelectedRecipes((current) => ({
+      ...current,
+      [recipeId]: Math.max(1, servings),
+    }));
+  }
+
+  const selectedEntries = useMemo(
+    () =>
+      Object.entries(selectedRecipes)
+        .map(([recipeId, servings]) => {
+          const recipe = recipes.find((item) => item.id === recipeId);
+          return recipe ? { recipe, servings } : null;
+        })
+        .filter(
+          (entry): entry is { recipe: Recipe; servings: number } => entry !== null,
+        ),
+    [recipes, selectedRecipes],
+  );
+
+  const visibleRecipes = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+
+    return recipes.filter((recipe) => {
+      const matchesTab =
+        activeRecipeTab === "all" ||
+        recipe.meal_types.some(
+          (type) => type.toLowerCase() === activeRecipeTab,
+        );
+      const matchesSearch =
+        !query ||
+        recipe.name.toLowerCase().includes(query) ||
+        recipe.description.toLowerCase().includes(query);
+      return matchesTab && matchesSearch;
+    });
+  }, [activeRecipeTab, recipes, searchQuery]);
 
   async function saveMeal() {
-    if (
-      !selectedSlot ||
-      !selectedRecipeId ||
-      servings < 1
-    ) {
+    if (!selectedSlot || selectedEntries.length === 0) {
       return;
     }
 
     setIsSaving(true);
     setErrorMessage("");
-    setStatusMessage("Saving meal…");
 
     try {
       const user = await getCurrentUser();
+
       if (!user) {
-        throw new Error(
-          "Please log in before saving a meal.",
-        );
+        throw new Error("Please log in before saving a meal.");
       }
-      const planId =
-        await ensureWeeklyPlan();
 
-      const slotKey = makeSlotKey(
-        selectedSlot.dayIndex,
-        selectedSlot.mealType,
-      );
+      const planId = await ensureWeeklyPlan();
+      const key = slotKey(selectedSlot.dayIndex, selectedSlot.slot.id);
+      const existing = weeklyPlan[key];
+      const first = selectedEntries[0];
+      const legacyMealType =
+        selectedSlot.slot.meal_type === "any"
+          ? "Snack"
+          : mealCategoryLabels[selectedSlot.slot.meal_type];
 
-      const existingMeal =
-        weeklyPlan[slotKey];
+      const payload = {
+        recipe_id: first.recipe.id,
+        servings: first.servings,
+        meal_type: legacyMealType,
+        meal_slot_id: selectedSlot.slot.id,
+        meal_slot_name: selectedSlot.slot.name,
+        meal_category: selectedSlot.slot.meal_type,
+        meal_time: selectedSlot.slot.time,
+        ready_by_time: selectedSlot.slot.ready_by_time,
+        preparation_mode: selectedSlot.slot.preparation_mode,
+        updated_at: new Date().toISOString(),
+      };
 
-      if (existingMeal) {
-        const {
-          data: updatedMeal,
-          error,
-        } = await supabase
+      let plannedMealId = existing?.id ?? null;
+
+      if (plannedMealId) {
+        const { error } = await supabase
           .from("planned_meals")
-          .update({
-            recipe_id:
-              selectedRecipeId,
-            servings,
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq("id", existingMeal.id)
-          .select(`
-            id,
-            recipe_id,
-            servings
-          `)
-          .single();
+          .update(payload)
+          .eq("id", plannedMealId);
 
         if (error) {
           throw error;
         }
-
-        setWeeklyPlan((current) => ({
-          ...current,
-          [slotKey]: {
-            id: updatedMeal.id,
-            recipeId:
-              updatedMeal.recipe_id,
-            servings:
-              updatedMeal.servings,
-          },
-        }));
       } else {
-        const {
-          data: insertedMeal,
-          error,
-        } = await supabase
+        const { data, error } = await supabase
           .from("planned_meals")
           .insert({
+            ...payload,
             weekly_plan_id: planId,
             user_id: user.id,
-            recipe_id:
-              selectedRecipeId,
-            day_index:
-              selectedSlot.dayIndex,
-            meal_type:
-              selectedSlot.mealType,
-            servings,
+            day_index: selectedSlot.dayIndex,
           })
-          .select(`
-            id,
-            recipe_id,
-            servings
-          `)
+          .select("id")
           .single();
 
         if (error) {
           throw error;
         }
 
-        setWeeklyPlan((current) => ({
-          ...current,
-          [slotKey]: {
-            id: insertedMeal.id,
-            recipeId:
-              insertedMeal.recipe_id,
-            servings:
-              insertedMeal.servings,
-          },
-        }));
+        plannedMealId = data.id;
       }
 
-      setStatusMessage(
-        "Meal saved online.",
-      );
+      const { error: deleteError } = await supabase
+        .from("planned_meal_recipes")
+        .delete()
+        .eq("planned_meal_id", plannedMealId);
 
-      closeMealPicker();
+      if (deleteError) {
+        throw deleteError;
+      }
+
+      const { data: links, error: insertError } = await supabase
+        .from("planned_meal_recipes")
+        .insert(
+          selectedEntries.map((entry, position) => ({
+            user_id: user.id,
+            planned_meal_id: plannedMealId,
+            recipe_id: entry.recipe.id,
+            servings: entry.servings,
+            position,
+          })),
+        )
+        .select("id, recipe_id, servings, position");
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      setWeeklyPlan((current) => ({
+        ...current,
+        [key]: {
+          id: plannedMealId,
+          dayIndex: selectedSlot.dayIndex,
+          slotId: selectedSlot.slot.id,
+          slotName: selectedSlot.slot.name,
+          category: selectedSlot.slot.meal_type,
+          mealTime: selectedSlot.slot.time,
+          readyByTime: selectedSlot.slot.ready_by_time,
+          preparationMode: selectedSlot.slot.preparation_mode,
+          recipes: (links ?? []).map((item) => ({
+            id: item.id,
+            recipeId: item.recipe_id,
+            servings: item.servings,
+            position: item.position,
+          })),
+        },
+      }));
+
+      setMessage("Meal saved.");
+      closePicker();
     } catch (error) {
-      console.error(
-        "Could not save meal:",
-        error,
-      );
-
+      console.error("Could not save meal:", error);
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not save the meal.",
+        error instanceof Error ? error.message : "Could not save meal.",
       );
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function removeMeal() {
+  async function clearSelectedMeal() {
     if (!selectedSlot) {
       return;
     }
 
-    const slotKey = makeSlotKey(
-      selectedSlot.dayIndex,
-      selectedSlot.mealType,
-    );
+    const key = slotKey(selectedSlot.dayIndex, selectedSlot.slot.id);
+    const existing = weeklyPlan[key];
 
-    const existingMeal =
-      weeklyPlan[slotKey];
-
-    if (!existingMeal) {
-      closeMealPicker();
+    if (!existing) {
+      closePicker();
       return;
     }
 
     setIsSaving(true);
-    setErrorMessage("");
 
     try {
-      const { error } = await supabase
-        .from("planned_meals")
-        .delete()
-        .eq("id", existingMeal.id);
+      const { error } = await supabase.from("planned_meals").delete().eq("id", existing.id);
 
       if (error) {
         throw error;
       }
 
       setWeeklyPlan((current) => {
-        const updated = {
-          ...current,
-        };
-
-        delete updated[slotKey];
-
-        return updated;
+        const next = { ...current };
+        delete next[key];
+        return next;
       });
-
-      setStatusMessage(
-        "Meal removed.",
-      );
-
-      closeMealPicker();
+      setMessage("Meal cleared.");
+      closePicker();
     } catch (error) {
-      console.error(
-        "Could not remove meal:",
-        error,
-      );
-
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not remove the meal.",
+        error instanceof Error ? error.message : "Could not clear meal.",
       );
     } finally {
       setIsSaving(false);
     }
   }
 
-  async function clearMeals() {
-    if (!weeklyPlanId) {
+  async function useSameAsLastWeek() {
+    if (isCopyingPrevious || isSaving || isFinalizing) {
       return;
     }
 
-    const shouldClear = window.confirm(
-      "Remove all meals from this week?",
-    );
+    if (
+      Object.keys(weeklyPlan).length > 0 &&
+      !window.confirm(
+        "Replace this week's current menu with last week's menu?",
+      )
+    ) {
+      return;
+    }
 
-    if (!shouldClear) {
+    setIsCopyingPrevious(true);
+    setErrorMessage("");
+    setMessage("Copying last week's menu…");
+
+    try {
+      const user = await getCurrentUser();
+
+      if (!user) {
+        throw new Error("Please log in before copying a menu.");
+      }
+
+      const previousWeekStart = addDays(weekStart, -7);
+      const { data: previousPlan, error: previousPlanError } = await supabase
+        .from("weekly_plans")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("week_start", toDateString(previousWeekStart))
+        .maybeSingle();
+
+      if (previousPlanError) {
+        throw previousPlanError;
+      }
+
+      if (!previousPlan) {
+        throw new Error("No saved menu exists for the previous week.");
+      }
+
+      const { data: previousMealsData, error: previousMealsError } =
+        await supabase
+          .from("planned_meals")
+          .select(`
+            id,
+            recipe_id,
+            day_index,
+            meal_type,
+            servings,
+            meal_slot_id,
+            meal_slot_name,
+            meal_category,
+            meal_time,
+            ready_by_time,
+            preparation_mode,
+            planned_meal_recipes (
+              id,
+              recipe_id,
+              servings,
+              position
+            )
+          `)
+          .eq("weekly_plan_id", previousPlan.id)
+          .order("day_index");
+
+      if (previousMealsError) {
+        throw previousMealsError;
+      }
+
+      const previousMeals = (previousMealsData ?? []) as PlannedMealRow[];
+
+      if (previousMeals.length === 0) {
+        throw new Error("The previous week has no meals to copy.");
+      }
+
+      const targetPlanId = await ensureWeeklyPlan();
+      const { error: clearError } = await supabase
+        .from("planned_meals")
+        .delete()
+        .eq("weekly_plan_id", targetPlanId);
+
+      if (clearError) {
+        throw clearError;
+      }
+
+      for (const sourceMeal of previousMeals) {
+        const { data: insertedMeal, error: insertMealError } = await supabase
+          .from("planned_meals")
+          .insert({
+            user_id: user.id,
+            weekly_plan_id: targetPlanId,
+            recipe_id: sourceMeal.recipe_id,
+            day_index: sourceMeal.day_index,
+            meal_type: sourceMeal.meal_type,
+            servings: sourceMeal.servings,
+            meal_slot_id: sourceMeal.meal_slot_id,
+            meal_slot_name: sourceMeal.meal_slot_name,
+            meal_category: sourceMeal.meal_category,
+            meal_time: sourceMeal.meal_time,
+            ready_by_time: sourceMeal.ready_by_time,
+            preparation_mode: sourceMeal.preparation_mode,
+            updated_at: new Date().toISOString(),
+          })
+          .select("id")
+          .single();
+
+        if (insertMealError) {
+          throw insertMealError;
+        }
+
+        const links = [...(sourceMeal.planned_meal_recipes ?? [])].sort(
+          (first, second) => first.position - second.position,
+        );
+
+        if (links.length > 0) {
+          const { error: linkError } = await supabase
+            .from("planned_meal_recipes")
+            .insert(
+              links.map((link) => ({
+                user_id: user.id,
+                planned_meal_id: insertedMeal.id,
+                recipe_id: link.recipe_id,
+                servings: link.servings,
+                position: link.position,
+              })),
+            );
+
+          if (linkError) {
+            throw linkError;
+          }
+        }
+      }
+
+      await loadWeek(weekStart);
+      setMessage("Last week's menu copied. Review it, then update the week.");
+    } catch (error) {
+      console.error("Could not copy last week's menu:", error);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not copy last week's menu.",
+      );
+    } finally {
+      setIsCopyingPrevious(false);
+    }
+  }
+
+  async function updateEntireWeek() {
+    if (isFinalizing || isSaving || isCopyingPrevious) {
+      return;
+    }
+
+    setIsFinalizing(true);
+    setErrorMessage("");
+    setMessage("Updating catalogue, pantry-aware shopping list, and schedule…");
+
+    try {
+      const user = await getCurrentUser();
+
+      if (!user) {
+        throw new Error("Please log in before updating the week.");
+      }
+
+      const result = await finalizeWeek(supabase, user.id, weekStart);
+      setMessage(
+        `Week updated: ${result.catalogueIngredientCount} catalogue ingredients checked, ` +
+          `${result.pantryItemCount} pantry items considered, ` +
+          `${result.shoppingItemCount} shopping items, and ` +
+          `${result.scheduledTaskCount} schedule tasks generated.`,
+      );
+    } catch (error) {
+      console.error("Could not update the week:", error);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Could not update the week.",
+      );
+    } finally {
+      setIsFinalizing(false);
+    }
+  }
+
+  async function clearAllMeals() {
+    if (!weeklyPlanId || Object.keys(weeklyPlan).length === 0) {
+      return;
+    }
+
+    if (!window.confirm("Clear every meal from this week?")) {
       return;
     }
 
     setIsSaving(true);
-    setErrorMessage("");
 
     try {
       const { error } = await supabase
         .from("planned_meals")
         .delete()
-        .eq(
-          "weekly_plan_id",
-          weeklyPlanId,
-        );
+        .eq("weekly_plan_id", weeklyPlanId);
 
       if (error) {
         throw error;
       }
 
       setWeeklyPlan({});
-
-      setStatusMessage(
-        "All meals removed.",
-      );
+      setMessage("All meals cleared.");
     } catch (error) {
-      console.error(
-        "Could not clear meals:",
-        error,
-      );
-
       setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not clear the meals.",
+        error instanceof Error ? error.message : "Could not clear meals.",
       );
     } finally {
       setIsSaving(false);
     }
   }
 
-  function openNewCookingBlock() {
-    setEditingCookingBlockId(null);
-
-    setCookingBlockForm({
-      ...emptyCookingBlockForm,
-    });
-
-    setCookingBlockError("");
-    setIsCookingBlockModalOpen(true);
-  }
-
-  function openEditCookingBlock(
-    block: CookingBlock,
-  ) {
-    setEditingCookingBlockId(block.id);
-
-    setCookingBlockForm({
-      dayIndex: block.dayIndex,
-      startTime: block.startTime,
-      endTime: block.endTime,
-      type: block.type,
-      notes: block.notes,
-    });
-
-    setCookingBlockError("");
-    setIsCookingBlockModalOpen(true);
-  }
-
-  function closeCookingBlockModal() {
-    setIsCookingBlockModalOpen(false);
-    setEditingCookingBlockId(null);
-    setCookingBlockError("");
-  }
-
-  function updateCookingBlockForm<
-    Key extends keyof CookingBlockForm,
-  >(
-    field: Key,
-    value: CookingBlockForm[Key],
-  ) {
-    setCookingBlockForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-
-    setCookingBlockError("");
-  }
-
-  function hasCookingBlockOverlap(
-    candidate: CookingBlockForm,
-  ) {
-    const candidateStart = timeToMinutes(
-      candidate.startTime,
-    );
-
-    const candidateEnd = timeToMinutes(
-      candidate.endTime,
-    );
-
-    return cookingBlocks.some((block) => {
-      if (
-        block.id === editingCookingBlockId ||
-        block.dayIndex !==
-          candidate.dayIndex
-      ) {
-        return false;
-      }
-
-      const existingStart = timeToMinutes(
-        block.startTime,
-      );
-
-      const existingEnd = timeToMinutes(
-        block.endTime,
-      );
-
-      return (
-        candidateStart < existingEnd &&
-        candidateEnd > existingStart
-      );
-    });
-  }
-
-  async function saveCookingBlock() {
-    if (
-      !cookingBlockForm.startTime ||
-      !cookingBlockForm.endTime
-    ) {
-      setCookingBlockError(
-        "Please enter both a start time and an end time.",
-      );
-
-      return;
-    }
-
-    const startMinutes = timeToMinutes(
-      cookingBlockForm.startTime,
-    );
-
-    const endMinutes = timeToMinutes(
-      cookingBlockForm.endTime,
-    );
-
-    if (
-      !Number.isFinite(startMinutes) ||
-      !Number.isFinite(endMinutes)
-    ) {
-      setCookingBlockError(
-        "Please enter valid start and end times.",
-      );
-
-      return;
-    }
-
-    if (endMinutes <= startMinutes) {
-      setCookingBlockError(
-        "The end time must be later than the start time.",
-      );
-
-      return;
-    }
-
-    if (endMinutes - startMinutes < 15) {
-      setCookingBlockError(
-        "A cooking block must be at least 15 minutes long.",
-      );
-
-      return;
-    }
-
-    if (
-      hasCookingBlockOverlap(
-        cookingBlockForm,
-      )
-    ) {
-      setCookingBlockError(
-        "This cooking block overlaps another block on the same day.",
-      );
-
-      return;
-    }
-
-    setIsSaving(true);
-    setErrorMessage("");
-
-    try {
-      const user = await getCurrentUser();
-      if (!user) {
-        throw new Error(
-          "Please log in before saving a cooking block.",
-        );
-      }
-      const planId =
-        await ensureWeeklyPlan();
-
-      if (editingCookingBlockId) {
-        const {
-          data: updatedBlock,
-          error,
-        } = await supabase
-          .from("cooking_blocks")
-          .update({
-            day_index:
-              cookingBlockForm.dayIndex,
-            start_time:
-              cookingBlockForm.startTime,
-            end_time:
-              cookingBlockForm.endTime,
-            block_type:
-              cookingBlockForm.type,
-            notes:
-              cookingBlockForm.notes.trim(),
-            updated_at:
-              new Date().toISOString(),
-          })
-          .eq(
-            "id",
-            editingCookingBlockId,
-          )
-          .select(`
-            id,
-            day_index,
-            start_time,
-            end_time,
-            block_type,
-            notes
-          `)
-          .single();
-
-        if (error) {
-          throw error;
-        }
-
-        const normalizedBlock: CookingBlock =
-          {
-            id: updatedBlock.id,
-            dayIndex:
-              updatedBlock.day_index,
-            startTime:
-              normalizeDatabaseTime(
-                updatedBlock.start_time,
-              ),
-            endTime:
-              normalizeDatabaseTime(
-                updatedBlock.end_time,
-              ),
-            type:
-              updatedBlock.block_type,
-            notes: updatedBlock.notes,
-          };
-
-        setCookingBlocks((current) =>
-          sortCookingBlocks(
-            current.map((block) =>
-              block.id ===
-              editingCookingBlockId
-                ? normalizedBlock
-                : block,
-            ),
-          ),
-        );
-      } else {
-        const {
-          data: insertedBlock,
-          error,
-        } = await supabase
-          .from("cooking_blocks")
-          .insert({
-            weekly_plan_id: planId,
-            user_id: user.id,
-            day_index:
-              cookingBlockForm.dayIndex,
-            start_time:
-              cookingBlockForm.startTime,
-            end_time:
-              cookingBlockForm.endTime,
-            block_type:
-              cookingBlockForm.type,
-            notes:
-              cookingBlockForm.notes.trim(),
-          })
-          .select(`
-            id,
-            day_index,
-            start_time,
-            end_time,
-            block_type,
-            notes
-          `)
-          .single();
-
-        if (error) {
-          throw error;
-        }
-
-        const normalizedBlock: CookingBlock =
-          {
-            id: insertedBlock.id,
-            dayIndex:
-              insertedBlock.day_index,
-            startTime:
-              normalizeDatabaseTime(
-                insertedBlock.start_time,
-              ),
-            endTime:
-              normalizeDatabaseTime(
-                insertedBlock.end_time,
-              ),
-            type:
-              insertedBlock.block_type,
-            notes: insertedBlock.notes,
-          };
-
-        setCookingBlocks((current) =>
-          sortCookingBlocks([
-            ...current,
-            normalizedBlock,
-          ]),
-        );
-      }
-
-      setStatusMessage(
-        "Cooking block saved online.",
-      );
-
-      closeCookingBlockModal();
-    } catch (error) {
-      console.error(
-        "Could not save cooking block:",
-        error,
-      );
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not save the cooking block.",
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function deleteCookingBlock(
-    blockId: string,
-  ) {
-    const shouldDelete = window.confirm(
-      "Delete this cooking block?",
-    );
-
-    if (!shouldDelete) {
-      return;
-    }
-
-    setIsSaving(true);
-    setErrorMessage("");
-
-    try {
-      const { error } = await supabase
-        .from("cooking_blocks")
-        .delete()
-        .eq("id", blockId);
-
-      if (error) {
-        throw error;
-      }
-
-      setCookingBlocks((current) =>
-        current.filter(
-          (block) => block.id !== blockId,
-        ),
-      );
-
-      setStatusMessage(
-        "Cooking block deleted.",
-      );
-    } catch (error) {
-      console.error(
-        "Could not delete cooking block:",
-        error,
-      );
-
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Could not delete the cooking block.",
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  function getBlockTypeLabel(
-    type: CookingBlockType,
-  ) {
-    return (
-      cookingBlockTypes.find(
-        (option) =>
-          option.value === type,
-      )?.label ?? type
-    );
-  }
-
-  function goToPreviousWeek() {
-    setWeekStart((current) =>
-      addWeeks(current, -1),
-    );
-  }
-
-  function goToNextWeek() {
-    setWeekStart((current) =>
-      addWeeks(current, 1),
-    );
-  }
-
-  function goToCurrentWeek() {
-    setWeekStart(
-      getMonday(new Date()),
-    );
-  }
+  const plannedSlotCount = Object.keys(weeklyPlan).length;
+  const plannedRecipeCount = Object.values(weeklyPlan).reduce(
+    (total, meal) => total + meal.recipes.length,
+    0,
+  );
+  const configuredSlotCount = dayKeys.reduce(
+    (total, day) => total + resolveDaySettings(settings, day).meal_slots.length,
+    0,
+  );
 
   return (
     <>
       <section className="planner-summary">
         <div className="planner-summary-stats">
           <div>
-            <span>Meals selected</span>
-
-            <strong>
-              {numberOfPlannedMeals}
-            </strong>
-
-            <small>
-              of{" "}
-              {days.length *
-                mealTypes.length}{" "}
-              slots
-            </small>
+            <span>Meal slots planned</span>
+            <strong>{plannedSlotCount}</strong>
+            <small>of {configuredSlotCount} configured slots</small>
           </div>
-
           <div>
-            <span>Cooking blocks</span>
-
-            <strong>
-              {cookingBlocks.length}
-            </strong>
-
-            <small>
-              {formatDuration(
-                totalCookingMinutes,
-              )}{" "}
-              available
-            </small>
+            <span>Recipes planned</span>
+            <strong>{plannedRecipeCount}</strong>
+            <small>Multiple recipes can share a slot</small>
           </div>
-
           <div>
             <span>Recipes available</span>
-
             <strong>{recipes.length}</strong>
-
-            <small>
-              Loaded from Supabase
-            </small>
+            <small>Loaded from your library</small>
           </div>
         </div>
 
-        <button
-          className="text-button danger-text"
-          disabled={
-            numberOfPlannedMeals === 0 ||
-            isSaving
-          }
-          onClick={clearMeals}
-          type="button"
-        >
-          Clear meals
-        </button>
+        <div className="planner-summary-actions">
+          <button
+            className="primary-button"
+            disabled={
+              plannedSlotCount === 0 ||
+              isSaving ||
+              isFinalizing ||
+              isCopyingPrevious
+            }
+            onClick={updateEntireWeek}
+            type="button"
+          >
+            {isFinalizing ? "Updating week…" : "Update week"}
+          </button>
+
+          <button
+            className="text-button danger-text"
+            disabled={plannedSlotCount === 0 || isSaving || isFinalizing}
+            onClick={clearAllMeals}
+            type="button"
+          >
+            Clear meals
+          </button>
+        </div>
       </section>
 
       {errorMessage ? (
-        <p
-          className="form-error"
-          role="alert"
-        >
+        <p className="form-error" role="alert">
           {errorMessage}
         </p>
       ) : null}
 
-      <section className="panel week-panel">
+      <section className="panel week-panel flexible-week-panel">
         <div className="week-toolbar">
           <div>
-            <p className="eyebrow">
-              Weekly plan
-            </p>
-
-            <h2>
-              {formatWeekRange(weekStart)}
-            </h2>
-
+            <p className="eyebrow">Weekly plan</p>
+            <h2>{formatWeekRange(weekStart)}</h2>
             <p className="save-status">
-              {isLoadingWeek
-                ? "Loading week…"
-                : isSaving
-                  ? "Saving…"
-                  : statusMessage}
+              {isLoading ? "Loading week…" : isSaving ? "Saving…" : message}
             </p>
           </div>
 
           <div className="week-actions">
             <button
-              className="secondary-button"
+              className="secondary-button week-copy-button"
               disabled={
-                isLoadingWeek || isSaving
+                isLoading ||
+                isSaving ||
+                isFinalizing ||
+                isCopyingPrevious
               }
-              onClick={goToPreviousWeek}
+              onClick={useSameAsLastWeek}
+              type="button"
+            >
+              {isCopyingPrevious ? "Copying…" : "Use same as last week"}
+            </button>
+
+            <button
+              className="secondary-button"
+              disabled={isLoading || isSaving || isFinalizing}
+              onClick={() => setWeekStart(addDays(weekStart, -7))}
               type="button"
             >
               Previous
             </button>
-
             <button
               className="secondary-button"
-              disabled={
-                isLoadingWeek || isSaving
-              }
-              onClick={goToCurrentWeek}
+              disabled={isLoading || isSaving || isFinalizing}
+              onClick={() => setWeekStart(getMonday(new Date()))}
               type="button"
             >
               Current
             </button>
-
             <button
               className="secondary-button"
-              disabled={
-                isLoadingWeek || isSaving
-              }
-              onClick={goToNextWeek}
+              disabled={isLoading || isSaving || isFinalizing}
+              onClick={() => setWeekStart(addDays(weekStart, 7))}
               type="button"
             >
               Next
@@ -1480,679 +965,234 @@ export default function WeeklyPlanner() {
           </div>
         </div>
 
-        <div className="week-grid-scroll">
-          <div className="week-grid">
-            <div className="week-grid-corner">
-              Meal
-            </div>
-
-            {days.map(
-              (day, dayIndex) => (
-                <div
-                  className="week-day-heading"
-                  key={day}
-                >
-                  <strong>{day}</strong>
-                  <small>
-                    {formatDayDate(
-                      weekStart,
-                      dayIndex,
-                    )}
-                  </small>
-                </div>
-              ),
-            )}
-
-            {mealTypes.map((mealType) => (
-              <div
-                className="week-row"
-                key={mealType}
-              >
-                <div className="meal-type-heading">
-                  {mealType}
-                </div>
-
-                {days.map(
-                  (day, dayIndex) => {
-                    const slotKey =
-                      makeSlotKey(
-                        dayIndex,
-                        mealType,
-                      );
-
-                    const plannedMeal =
-                      weeklyPlan[slotKey];
-
-                    const recipe =
-                      plannedMeal
-                        ? recipes.find(
-                            (item) =>
-                              item.id ===
-                              plannedMeal.recipeId,
-                          )
-                        : undefined;
-
-                    return (
-                      <button
-                        className={
-                          recipe
-                            ? "meal-slot meal-slot-filled"
-                            : "meal-slot"
-                        }
-                        disabled={
-                          recipesLoading ||
-                          isLoadingWeek ||
-                          isSaving
-                        }
-                        key={`${day}-${mealType}`}
-                        onClick={() =>
-                          openMealPicker(
-                            dayIndex,
-                            mealType,
-                          )
-                        }
-                        type="button"
-                      >
-                        {recipesLoading ||
-                        isLoadingWeek ? (
-                          <small>
-                            Loading…
-                          </small>
-                        ) : recipe &&
-                          plannedMeal ? (
-                          <>
-                            <strong>
-                              {recipe.name}
-                            </strong>
-
-                            <small>
-                              {
-                                plannedMeal.servings
-                              }{" "}
-                              {plannedMeal.servings ===
-                              1
-                                ? "serving"
-                                : "servings"}
-                            </small>
-
-                            <span className="edit-label">
-                              Edit
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="add-symbol">
-                              +
-                            </span>
-
-                            <small>
-                              Add meal
-                            </small>
-                          </>
-                        )}
-                      </button>
-                    );
-                  },
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="panel cooking-block-panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">
-              Availability
-            </p>
-
-            <h2>Cooking blocks</h2>
-          </div>
-
-          <button
-            className="primary-button"
-            disabled={
-              isLoadingWeek || isSaving
-            }
-            onClick={openNewCookingBlock}
-            type="button"
-          >
-            Add cooking block
-          </button>
-        </div>
-
-        {cookingBlocks.length === 0 ? (
-          <div className="empty-state">
-            <strong>
-              No cooking blocks yet
-            </strong>
-
-            <p>
-              Add the periods during the week
-              when you are available to prepare
-              or cook food.
-            </p>
-
-            <button
-              className="secondary-button"
-              disabled={
-                isLoadingWeek || isSaving
-              }
-              onClick={openNewCookingBlock}
-              type="button"
-            >
-              Add first cooking block
-            </button>
-          </div>
-        ) : (
-          <div className="cooking-block-list">
-            {cookingBlocks.map((block) => {
-              const duration =
-                getBlockDuration(
-                  block.startTime,
-                  block.endTime,
-                );
+        <div className="flexible-week-scroll">
+          <div className="flexible-week-grid">
+            {dayKeys.map((day, dayIndex) => {
+              const daySettings = resolveDaySettings(settings, day);
 
               return (
-                <article
-                  className={`cooking-block-card cooking-block-${block.type}`}
-                  key={block.id}
-                >
-                  <div className="cooking-block-time">
-                    <strong>
-                      {days[block.dayIndex]}
-                    </strong>
-
-                    <span>
-                      {formatTime(
-                        block.startTime,
-                      )}
-                      –
-                      {formatTime(
-                        block.endTime,
-                      )}
-                    </span>
-
-                    <small>
-                      {formatDuration(duration)}
-                    </small>
+                <section className="flexible-day-column" key={day}>
+                  <div className="flexible-day-heading">
+                    <strong>{dayLabels[day]}</strong>
+                    <small>{formatDayDate(weekStart, dayIndex)}</small>
                   </div>
 
-                  <div className="cooking-block-details">
-                    <span className="block-type-badge">
-                      {getBlockTypeLabel(
-                        block.type,
-                      )}
-                    </span>
+                  <div className="flexible-day-slots">
+                    {daySettings.meal_slots.map((slot) => {
+                      const meal = weeklyPlan[slotKey(dayIndex, slot.id)];
+                      const plannedRecipes = (meal?.recipes ?? [])
+                        .map((plannedRecipe) => {
+                          const recipe = recipes.find(
+                            (item) => item.id === plannedRecipe.recipeId,
+                          );
+                          return recipe ? { recipe, plannedRecipe } : null;
+                        })
+                        .filter(
+                          (
+                            item,
+                          ): item is {
+                            recipe: Recipe;
+                            plannedRecipe: PlannedMealRecipe;
+                          } => item !== null,
+                        );
 
-                    {block.notes ? (
-                      <p>{block.notes}</p>
-                    ) : (
-                      <p className="muted-placeholder">
-                        No notes
-                      </p>
-                    )}
+                      return (
+                        <button
+                          className={
+                            plannedRecipes.length > 0
+                              ? "flexible-meal-slot filled"
+                              : "flexible-meal-slot"
+                          }
+                          disabled={isLoading || isSaving}
+                          key={slot.id}
+                          onClick={() => openPicker(dayIndex, slot)}
+                          type="button"
+                        >
+                          <span className="flexible-meal-slot-heading">
+                            <strong>{slot.name}</strong>
+                            <small>{formatTime(slot.time)}</small>
+                          </span>
+
+                          {plannedRecipes.length > 0 ? (
+                            <span className="meal-slot-recipe-list">
+                              {plannedRecipes.map(({ recipe, plannedRecipe }) => (
+                                <span className="flexible-recipe-pill" key={plannedRecipe.id}>
+                                  {recipe.name}
+                                </span>
+                              ))}
+                            </span>
+                          ) : (
+                            <span className="flexible-add-label">+ Add recipes</span>
+                          )}
+
+                          <small className="flexible-slot-mode">
+                            {slot.preparation_mode.replaceAll("_", " ")}
+                          </small>
+                        </button>
+                      );
+                    })}
                   </div>
-
-                  <div className="cooking-block-actions">
-                    <button
-                      className="text-button"
-                      disabled={isSaving}
-                      onClick={() =>
-                        openEditCookingBlock(
-                          block,
-                        )
-                      }
-                      type="button"
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      className="text-button danger-text"
-                      disabled={isSaving}
-                      onClick={() =>
-                        deleteCookingBlock(
-                          block.id,
-                        )
-                      }
-                      type="button"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </article>
+                </section>
               );
             })}
           </div>
-        )}
+        </div>
       </section>
 
       {selectedSlot ? (
-        <div
-          aria-labelledby="meal-picker-title"
-          aria-modal="true"
-          className="modal-backdrop"
-          role="dialog"
-          onMouseDown={(event) => {
-            if (
-              event.target ===
-              event.currentTarget
-            ) {
-              closeMealPicker();
-            }
-          }}
-        >
-          <div className="modal-card">
+        <div className="modal-backdrop" onMouseDown={closePicker} role="presentation">
+          <section
+            aria-modal="true"
+            className="modal-card recipe-picker-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
             <div className="modal-header">
               <div>
-                <p className="eyebrow">
-                  {days[
-                    selectedSlot.dayIndex
-                  ]}{" "}
-                  ·{" "}
-                  {formatDayDate(
-                    weekStart,
-                    selectedSlot.dayIndex,
-                  )}
+                <p className="eyebrow">{days[selectedSlot.dayIndex]}</p>
+                <h2>{selectedSlot.slot.name}</h2>
+                <p>
+                  {formatTime(selectedSlot.slot.time)} · Choose one or more recipes
                 </p>
-
-                <h2 id="meal-picker-title">
-                  Choose{" "}
-                  {selectedSlot.mealType.toLowerCase()}
-                </h2>
               </div>
-
-              <button
-                aria-label="Close meal picker"
-                className="close-button"
-                disabled={isSaving}
-                onClick={closeMealPicker}
-                type="button"
-              >
+              <button className="close-button" onClick={closePicker} type="button">
                 ×
               </button>
             </div>
 
-            <div className="recipe-picker-list">
-              {compatibleRecipes.length ===
-              0 ? (
-                <div className="empty-state">
-                  <strong>
-                    No compatible recipes
-                  </strong>
-
-                  <p>
-                    Add a recipe assigned to{" "}
-                    {selectedSlot.mealType} on
-                    the Recipes page.
-                  </p>
+            <div className="multi-recipe-picker">
+              {selectedEntries.length > 0 ? (
+                <div className="selected-recipe-chips">
+                  {selectedEntries.map(({ recipe }) => (
+                    <button
+                      className="selected-recipe-chip"
+                      key={recipe.id}
+                      onClick={() => toggleRecipe(recipe)}
+                      type="button"
+                    >
+                      {recipe.name} <span>×</span>
+                    </button>
+                  ))}
                 </div>
               ) : (
-                compatibleRecipes.map(
-                  (recipe) => {
-                    const isSelected =
-                      recipe.id ===
-                      selectedRecipeId;
-
-                    return (
-                      <button
-                        className={
-                          isSelected
-                            ? "recipe-option selected"
-                            : "recipe-option"
-                        }
-                        disabled={isSaving}
-                        key={recipe.id}
-                        onClick={() =>
-                          chooseRecipe(recipe)
-                        }
-                        type="button"
-                      >
-                        <div>
-                          <strong>
-                            {recipe.name}
-                          </strong>
-
-                          <p>
-                            {recipe.description ||
-                              "No description"}
-                          </p>
-                        </div>
-
-                        <span>
-                          {recipe.preparation_minutes +
-                            recipe.cooking_minutes}{" "}
-                          min
-                        </span>
-                      </button>
-                    );
-                  },
-                )
+                <p className="recipe-picker-hint">No recipes selected yet.</p>
               )}
+
+              <div className="recipe-picker-tabs">
+                {recipeTabs.map((tab) => (
+                  <button
+                    className={
+                      activeRecipeTab === tab
+                        ? "recipe-picker-tab active"
+                        : "recipe-picker-tab"
+                    }
+                    key={tab}
+                    onClick={() => setActiveRecipeTab(tab)}
+                    type="button"
+                  >
+                    {tab === "all" ? "All" : mealCategoryLabels[tab]}
+                  </button>
+                ))}
+              </div>
+
+              <label className="recipe-picker-search">
+                <span>Search recipes</span>
+                <input
+                  placeholder="Search by name or description"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </label>
+
+              <div className="recipe-picker-list">
+                {visibleRecipes.length === 0 ? (
+                  <div className="empty-state">
+                    <strong>No matching recipes</strong>
+                    <p>Try another category or search term.</p>
+                  </div>
+                ) : (
+                  visibleRecipes.map((recipe) => {
+                    const selected = selectedRecipes[recipe.id] !== undefined;
+                    return (
+                      <article
+                        className={selected ? "recipe-option selected" : "recipe-option"}
+                        key={recipe.id}
+                      >
+                        <button
+                          className="recipe-option-toggle"
+                          onClick={() => toggleRecipe(recipe)}
+                          type="button"
+                        >
+                          <span className="recipe-option-checkbox">{selected ? "✓" : ""}</span>
+                          <span className="recipe-option-copy">
+                            <strong>{recipe.name}</strong>
+                            <small>{recipe.description || "No description"}</small>
+                          </span>
+                          <span className="recipe-option-duration">
+                            {recipe.preparation_minutes + recipe.cooking_minutes} min
+                          </span>
+                        </button>
+
+                        {selected ? (
+                          <div className="recipe-option-servings">
+                            <span>Servings</span>
+                            <div className="stepper">
+                              <button
+                                onClick={() =>
+                                  updateServings(recipe.id, selectedRecipes[recipe.id] - 1)
+                                }
+                                type="button"
+                              >
+                                −
+                              </button>
+                              <strong>{selectedRecipes[recipe.id]}</strong>
+                              <button
+                                onClick={() =>
+                                  updateServings(recipe.id, selectedRecipes[recipe.id] + 1)
+                                }
+                                type="button"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
-            {selectedRecipe ? (
-              <div className="serving-control">
-                <div>
-                  <strong>Servings</strong>
-
-                  <p>
-                    How many servings are needed
-                    for this meal?
-                  </p>
-                </div>
-
-                <div className="stepper">
-                  <button
-                    aria-label="Decrease servings"
-                    disabled={
-                      servings <= 1 ||
-                      isSaving
-                    }
-                    onClick={() =>
-                      setServings((current) =>
-                        Math.max(
-                          1,
-                          current - 1,
-                        ),
-                      )
-                    }
-                    type="button"
-                  >
-                    −
-                  </button>
-
-                  <strong>{servings}</strong>
-
-                  <button
-                    aria-label="Increase servings"
-                    disabled={isSaving}
-                    onClick={() =>
-                      setServings(
-                        (current) =>
-                          current + 1,
-                      )
-                    }
-                    type="button"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
             <div className="modal-actions">
-              {weeklyPlan[
-                makeSlotKey(
-                  selectedSlot.dayIndex,
-                  selectedSlot.mealType,
-                )
-              ] ? (
-                <button
-                  className="danger-button"
-                  disabled={isSaving}
-                  onClick={removeMeal}
-                  type="button"
-                >
-                  Remove meal
-                </button>
-              ) : (
-                <span />
-              )}
+              <button
+                className="text-button danger-text"
+                disabled={!weeklyPlan[slotKey(selectedSlot.dayIndex, selectedSlot.slot.id)]}
+                onClick={clearSelectedMeal}
+                type="button"
+              >
+                Clear slot
+              </button>
 
               <div className="modal-primary-actions">
-                <button
-                  className="secondary-button"
-                  disabled={isSaving}
-                  onClick={closeMealPicker}
-                  type="button"
-                >
+                <button className="secondary-button" onClick={closePicker} type="button">
                   Cancel
                 </button>
-
                 <button
                   className="primary-button"
-                  disabled={
-                    !selectedRecipeId ||
-                    isSaving
-                  }
+                  disabled={selectedEntries.length === 0 || isSaving}
                   onClick={saveMeal}
                   type="button"
                 >
                   {isSaving
-                    ? "Saving..."
-                    : "Save meal"}
+                    ? "Saving…"
+                    : `Save ${selectedEntries.length} ${
+                        selectedEntries.length === 1 ? "recipe" : "recipes"
+                      }`}
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {isCookingBlockModalOpen ? (
-        <div
-          aria-labelledby="cooking-block-title"
-          aria-modal="true"
-          className="modal-backdrop"
-          role="dialog"
-          onMouseDown={(event) => {
-            if (
-              event.target ===
-              event.currentTarget
-            ) {
-              closeCookingBlockModal();
-            }
-          }}
-        >
-          <div className="modal-card cooking-block-modal">
-            <div className="modal-header">
-              <div>
-                <p className="eyebrow">
-                  {formatWeekRange(
-                    weekStart,
-                  )}
-                </p>
-
-                <h2 id="cooking-block-title">
-                  {editingCookingBlockId
-                    ? "Edit cooking block"
-                    : "Add cooking block"}
-                </h2>
-              </div>
-
-              <button
-                aria-label="Close cooking block editor"
-                className="close-button"
-                disabled={isSaving}
-                onClick={
-                  closeCookingBlockModal
-                }
-                type="button"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="cooking-block-form">
-              <label className="form-field">
-                <span>Day</span>
-
-                <select
-                  value={
-                    cookingBlockForm.dayIndex
-                  }
-                  onChange={(event) =>
-                    updateCookingBlockForm(
-                      "dayIndex",
-                      Number(
-                        event.target.value,
-                      ),
-                    )
-                  }
-                >
-                  {days.map(
-                    (day, dayIndex) => (
-                      <option
-                        key={day}
-                        value={dayIndex}
-                      >
-                        {day} ·{" "}
-                        {formatDayDate(
-                          weekStart,
-                          dayIndex,
-                        )}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </label>
-
-              <div className="time-field-grid">
-                <label className="form-field">
-                  <span>Start time</span>
-
-                  <input
-                    required
-                    type="time"
-                    value={
-                      cookingBlockForm.startTime
-                    }
-                    onChange={(event) =>
-                      updateCookingBlockForm(
-                        "startTime",
-                        event.target.value,
-                      )
-                    }
-                  />
-                </label>
-
-                <label className="form-field">
-                  <span>End time</span>
-
-                  <input
-                    required
-                    type="time"
-                    value={
-                      cookingBlockForm.endTime
-                    }
-                    onChange={(event) =>
-                      updateCookingBlockForm(
-                        "endTime",
-                        event.target.value,
-                      )
-                    }
-                  />
-                </label>
-              </div>
-
-              <fieldset className="block-type-fieldset">
-                <legend>Block type</legend>
-
-                <div className="block-type-options">
-                  {cookingBlockTypes.map(
-                    (option) => (
-                      <label
-                        className={
-                          cookingBlockForm.type ===
-                          option.value
-                            ? "block-type-option selected"
-                            : "block-type-option"
-                        }
-                        key={option.value}
-                      >
-                        <input
-                          checked={
-                            cookingBlockForm.type ===
-                            option.value
-                          }
-                          name="cooking-block-type"
-                          type="radio"
-                          value={option.value}
-                          onChange={() =>
-                            updateCookingBlockForm(
-                              "type",
-                              option.value,
-                            )
-                          }
-                        />
-
-                        <span>
-                          <strong>
-                            {option.label}
-                          </strong>
-
-                          <small>
-                            {
-                              option.description
-                            }
-                          </small>
-                        </span>
-                      </label>
-                    ),
-                  )}
-                </div>
-              </fieldset>
-
-              <label className="form-field">
-                <span>Notes</span>
-
-                <textarea
-                  placeholder="For example: stovetop only, no oven, meal prep..."
-                  rows={3}
-                  value={
-                    cookingBlockForm.notes
-                  }
-                  onChange={(event) =>
-                    updateCookingBlockForm(
-                      "notes",
-                      event.target.value,
-                    )
-                  }
-                />
-              </label>
-
-              {cookingBlockError ? (
-                <p
-                  className="form-error"
-                  role="alert"
-                >
-                  {cookingBlockError}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="modal-actions">
-              <span />
-
-              <div className="modal-primary-actions">
-                <button
-                  className="secondary-button"
-                  disabled={isSaving}
-                  onClick={
-                    closeCookingBlockModal
-                  }
-                  type="button"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  className="primary-button"
-                  disabled={isSaving}
-                  onClick={saveCookingBlock}
-                  type="button"
-                >
-                  {isSaving
-                    ? "Saving..."
-                    : editingCookingBlockId
-                      ? "Save changes"
-                      : "Add block"}
-                </button>
-              </div>
-            </div>
-          </div>
+          </section>
         </div>
       ) : null}
     </>

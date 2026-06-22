@@ -71,14 +71,29 @@ type RecipeRow = {
     | null;
 };
 
-type PlannedMealRow = {
-  id: string;
+type PlannedMealRecipeRow = {
   recipe_id: string;
   servings: number;
+  position: number;
 
   recipes:
     | RecipeRow
     | RecipeRow[]
+    | null;
+};
+
+type PlannedMealRow = {
+  id: string;
+  recipe_id: string | null;
+  servings: number | null;
+
+  recipes:
+    | RecipeRow
+    | RecipeRow[]
+    | null;
+
+  planned_meal_recipes:
+    | PlannedMealRecipeRow[]
     | null;
 };
 
@@ -574,6 +589,28 @@ export default function ShoppingPage() {
                   category
                 )
               )
+            ),
+            planned_meal_recipes (
+              recipe_id,
+              servings,
+              position,
+              recipes (
+                id,
+                name,
+                default_servings,
+                recipe_ingredients (
+                  ingredient_id,
+                  name,
+                  quantity,
+                  unit,
+                  is_optional,
+                  ingredients (
+                    id,
+                    name,
+                    category
+                  )
+                )
+              )
             )
           `)
           .eq(
@@ -624,96 +661,101 @@ export default function ShoppingPage() {
         new Map<string, AggregateEntry>();
 
       for (const meal of plannedMeals) {
-        const recipe =
-          normalizeNestedSingle(
-            meal.recipes,
+        const joinedSelections =
+          meal.planned_meal_recipes ?? [];
+
+        const selections: PlannedMealRecipeRow[] =
+          joinedSelections.length > 0
+            ? [...joinedSelections].sort(
+                (first, second) =>
+                  first.position - second.position,
+              )
+            : meal.recipe_id
+              ? [
+                  {
+                    recipe_id: meal.recipe_id,
+                    servings: Math.max(
+                      Number(meal.servings ?? 1),
+                      1,
+                    ),
+                    position: 0,
+                    recipes: meal.recipes,
+                  },
+                ]
+              : [];
+
+        for (const selection of selections) {
+          const recipe = normalizeNestedSingle(
+            selection.recipes,
           );
 
-        if (!recipe) {
-          continue;
-        }
-
-        const servingScale =
-          Number(meal.servings) /
-          Math.max(
-            Number(
-              recipe.default_servings,
-            ),
-            1,
-          );
-
-        for (
-          const recipeIngredient of
-          recipe.recipe_ingredients ??
-          []
-        ) {
-          if (
-            recipeIngredient.is_optional
-          ) {
+          if (!recipe) {
             continue;
           }
 
-          const catalogueIngredient =
-            normalizeNestedSingle(
-              recipeIngredient.ingredients,
-            );
+          const servingScale =
+            Math.max(Number(selection.servings), 1) /
+            Math.max(Number(recipe.default_servings), 1);
 
-          const ingredientId =
-            recipeIngredient.ingredient_id ??
-            catalogueIngredient?.id ??
-            null;
+          for (
+            const recipeIngredient of
+            recipe.recipe_ingredients ?? []
+          ) {
+            if (recipeIngredient.is_optional) {
+              continue;
+            }
 
-          const ingredientName =
-            catalogueIngredient?.name ??
-            formatIngredientName(
-              recipeIngredient.name,
-            );
+            const catalogueIngredient =
+              normalizeNestedSingle(
+                recipeIngredient.ingredients,
+              );
 
-          const category =
-            catalogueIngredient?.category ??
-            inferIngredientCategory(
-              ingredientName,
-            );
+            const ingredientId =
+              recipeIngredient.ingredient_id ??
+              catalogueIngredient?.id ??
+              null;
 
-          const scaledQuantity =
-            Number(
-              recipeIngredient.quantity,
-            ) * servingScale;
+            const ingredientName =
+              catalogueIngredient?.name ??
+              formatIngredientName(
+                recipeIngredient.name,
+              );
 
-          const normalized =
-            normalizeMeasurement(
+            const category =
+              catalogueIngredient?.category ??
+              inferIngredientCategory(ingredientName);
+
+            const scaledQuantity =
+              Number(recipeIngredient.quantity) *
+              servingScale;
+
+            const normalized = normalizeMeasurement(
               scaledQuantity,
               recipeIngredient.unit,
             );
 
-          const key = getAggregateKey(
-            ingredientId,
-            ingredientName,
-            normalized.unit,
-          );
-
-          const existing =
-            aggregates.get(key);
-
-          if (existing) {
-            existing.requiredQuantity +=
-              normalized.quantity;
-
-            existing.sourceRecipes.add(
-              recipe.name,
-            );
-          } else {
-            aggregates.set(key, {
+            const key = getAggregateKey(
               ingredientId,
-              name: ingredientName,
-              category,
-              requiredQuantity:
-                normalized.quantity,
-              unit: normalized.unit,
-              sourceRecipes: new Set([
-                recipe.name,
-              ]),
-            });
+              ingredientName,
+              normalized.unit,
+            );
+
+            const existing = aggregates.get(key);
+
+            if (existing) {
+              existing.requiredQuantity +=
+                normalized.quantity;
+              existing.sourceRecipes.add(recipe.name);
+            } else {
+              aggregates.set(key, {
+                ingredientId,
+                name: ingredientName,
+                category,
+                requiredQuantity: normalized.quantity,
+                unit: normalized.unit,
+                sourceRecipes: new Set([recipe.name]),
+              });
+            }
           }
         }
       }

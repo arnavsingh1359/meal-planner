@@ -6,6 +6,13 @@ import {
   formatIngredientName,
   inferIngredientCategory,
 } from "@/lib/ingredient-utils";
+import {
+  inferTaskType,
+  recipeTaskTypeDescriptions,
+  recipeTaskTypeLabels,
+  recipeTaskTypes,
+  type RecipeTaskType,
+} from "@/lib/scheduler-types";
 
 type HelpTipProps = {
   text: string;
@@ -49,6 +56,20 @@ type RecipeStepInput = {
   stepType: StepType;
 };
 
+type RecipeTaskInput = {
+  title: string;
+  instructions: string;
+  taskType: RecipeTaskType;
+  activeMinutes: string;
+  passiveMinutes: string;
+  dayOffset: string;
+  startBeforeMealMinutes: string;
+  canBatch: boolean;
+  batchKey: string;
+  unattended: boolean;
+  blocksActiveWork: boolean;
+};
+
 type Recipe = {
   id: string;
   name: string;
@@ -85,6 +106,22 @@ type Recipe = {
     step_type: StepType;
     position: number;
   }[];
+
+  recipe_tasks: {
+    id: string;
+    title: string;
+    instructions: string;
+    task_type: RecipeTaskType;
+    active_minutes: number;
+    passive_minutes: number;
+    day_offset: number;
+    start_before_meal_minutes: number;
+    can_batch: boolean;
+    batch_key: string;
+    unattended: boolean;
+    blocks_active_work: boolean;
+    position: number;
+  }[];
 };
 
 const mealTypeOptions: MealType[] = ["Breakfast", "Lunch", "Dinner", "Snack"];
@@ -102,6 +139,20 @@ const emptyStep: RecipeStepInput = {
   instruction: "",
   durationMinutes: "",
   stepType: "active",
+};
+
+const emptyRecipeTask: RecipeTaskInput = {
+  title: "",
+  instructions: "",
+  taskType: "preparation",
+  activeMinutes: "0",
+  passiveMinutes: "0",
+  dayOffset: "0",
+  startBeforeMealMinutes: "60",
+  canBatch: false,
+  batchKey: "",
+  unattended: false,
+  blocksActiveWork: true,
 };
 
 function normalizeIngredientName(value: string) {
@@ -147,6 +198,9 @@ export default function RecipesPage() {
   ]);
 
   const [steps, setSteps] = useState<RecipeStepInput[]>([{ ...emptyStep }]);
+  const [recipeTasks, setRecipeTasks] = useState<RecipeTaskInput[]>([
+    { ...emptyRecipeTask },
+  ]);
 
   useEffect(() => {
     void loadInitialData();
@@ -258,6 +312,21 @@ export default function RecipesPage() {
           duration_minutes,
           step_type,
           position
+        ),
+        recipe_tasks (
+          id,
+          title,
+          instructions,
+          task_type,
+          active_minutes,
+          passive_minutes,
+          day_offset,
+          start_before_meal_minutes,
+          can_batch,
+          batch_key,
+          unattended,
+          blocks_active_work,
+          position
         )
       `,
       )
@@ -275,6 +344,10 @@ export default function RecipesPage() {
       ),
 
       recipe_steps: [...(recipe.recipe_steps ?? [])].sort(
+        (first, second) => first.position - second.position,
+      ),
+
+      recipe_tasks: [...(recipe.recipe_tasks ?? [])].sort(
         (first, second) => first.position - second.position,
       ),
     })) as Recipe[];
@@ -304,6 +377,7 @@ export default function RecipesPage() {
 
     setIngredients([{ ...emptyIngredient }]);
     setSteps([{ ...emptyStep }]);
+    setRecipeTasks([{ ...emptyRecipeTask }]);
 
     setMessage("");
   }
@@ -359,6 +433,24 @@ export default function RecipesPage() {
             stepType: step.step_type,
           }))
         : [{ ...emptyStep }],
+    );
+
+    setRecipeTasks(
+      recipe.recipe_tasks.length > 0
+        ? recipe.recipe_tasks.map((task) => ({
+            title: task.title,
+            instructions: task.instructions,
+            taskType: task.task_type,
+            activeMinutes: String(task.active_minutes),
+            passiveMinutes: String(task.passive_minutes),
+            dayOffset: String(task.day_offset),
+            startBeforeMealMinutes: String(task.start_before_meal_minutes),
+            canBatch: task.can_batch,
+            batchKey: task.batch_key,
+            unattended: task.unattended,
+            blocksActiveWork: task.blocks_active_work,
+          }))
+        : [{ ...emptyRecipeTask }],
     );
 
     setMessage("");
@@ -464,6 +556,57 @@ export default function RecipesPage() {
     );
   }
 
+  function updateRecipeTask(
+    index: number,
+    field: keyof RecipeTaskInput,
+    value: string | boolean,
+  ) {
+    setRecipeTasks((current) =>
+      current.map((task, taskIndex) =>
+        taskIndex === index
+          ? {
+              ...task,
+              [field]: value,
+            }
+          : task,
+      ),
+    );
+  }
+
+  function addRecipeTask() {
+    setRecipeTasks((current) => [...current, { ...emptyRecipeTask }]);
+  }
+
+  function removeRecipeTask(index: number) {
+    setRecipeTasks((current) =>
+      current.filter((_, taskIndex) => taskIndex !== index),
+    );
+  }
+
+  function inferRecipeTaskFromText(index: number) {
+    setRecipeTasks((current) =>
+      current.map((task, taskIndex) => {
+        if (taskIndex !== index) {
+          return task;
+        }
+
+        const inferredType = inferTaskType(
+          `${task.title} ${task.instructions}`,
+        );
+
+        return {
+          ...task,
+          taskType: inferredType,
+          unattended:
+            task.unattended ||
+            ["marinating", "soaking", "thawing", "resting", "cooling"].includes(
+              inferredType,
+            ),
+        };
+      }),
+    );
+  }
+
   function validateForm() {
     if (!name.trim()) {
       return "Enter a recipe name.";
@@ -525,6 +668,32 @@ export default function RecipesPage() {
 
     if (!steps.some((step) => step.instruction.trim())) {
       return "Add at least one cooking step.";
+    }
+
+    for (const task of recipeTasks) {
+      if (!task.title.trim()) {
+        return "Every schedule task needs a title.";
+      }
+
+      const numericFields = [
+        Number(task.activeMinutes),
+        Number(task.passiveMinutes),
+        Number(task.startBeforeMealMinutes),
+      ];
+
+      if (numericFields.some((value) => !Number.isFinite(value) || value < 0)) {
+        return `Enter valid non-negative timing values for ${task.title}.`;
+      }
+
+      const dayOffset = Number(task.dayOffset);
+
+      if (!Number.isInteger(dayOffset) || dayOffset < -14 || dayOffset > 14) {
+        return `Day offset for ${task.title} must be a whole number from -14 to 14.`;
+      }
+
+      if (task.canBatch && !task.batchKey.trim()) {
+        return `Add a batch key for ${task.title}, or turn off batching.`;
+      }
     }
 
     return "";
@@ -718,6 +887,15 @@ export default function RecipesPage() {
         if (deleteStepsError) {
           throw deleteStepsError;
         }
+
+        const { error: deleteTasksError } = await supabase
+          .from("recipe_tasks")
+          .delete()
+          .eq("recipe_id", recipeId);
+
+        if (deleteTasksError) {
+          throw deleteTasksError;
+        }
       } else {
         const { data: insertedRecipe, error: recipeError } = await supabase
           .from("recipes")
@@ -786,6 +964,32 @@ export default function RecipesPage() {
 
       if (stepError) {
         throw stepError;
+      }
+
+      const recipeTaskRows = recipeTasks.map((task, index) => ({
+        recipe_id: recipeId,
+        user_id: user.id,
+        title: task.title.trim(),
+        instructions: task.instructions.trim(),
+        task_type: task.taskType,
+        active_minutes: Number(task.activeMinutes) || 0,
+        passive_minutes: Number(task.passiveMinutes) || 0,
+        day_offset: Number(task.dayOffset) || 0,
+        start_before_meal_minutes:
+          Number(task.startBeforeMealMinutes) || 0,
+        can_batch: task.canBatch,
+        batch_key: task.canBatch ? task.batchKey.trim() : "",
+        unattended: task.unattended,
+        blocks_active_work: task.blocksActiveWork,
+        position: index,
+      }));
+
+      const { error: recipeTaskError } = await supabase
+        .from("recipe_tasks")
+        .insert(recipeTaskRows);
+
+      if (recipeTaskError) {
+        throw recipeTaskError;
       }
 
       closeForm();
@@ -1107,6 +1311,36 @@ export default function RecipesPage() {
                                 </li>
                               ))}
                             </ol>
+                          </div>
+
+                          <div className="recipe-card-section">
+                            <strong>Schedule tasks</strong>
+
+                            {recipe.recipe_tasks.length === 0 ? (
+                              <p>No scheduler tasks configured.</p>
+                            ) : (
+                              <ol>
+                                {recipe.recipe_tasks.map((task) => (
+                                  <li key={task.id}>
+                                    <strong>{task.title}</strong> — {
+                                      recipeTaskTypeLabels[task.task_type]
+                                    }
+                                    {task.day_offset !== 0
+                                      ? ` · day ${task.day_offset > 0 ? "+" : ""}${task.day_offset}`
+                                      : " · same day"}
+                                    {task.start_before_meal_minutes > 0
+                                      ? ` · ${task.start_before_meal_minutes} min before meal`
+                                      : ""}
+                                    {task.active_minutes > 0
+                                      ? ` · ${task.active_minutes} min active`
+                                      : ""}
+                                    {task.passive_minutes > 0
+                                      ? ` · ${task.passive_minutes} min passive`
+                                      : ""}
+                                  </li>
+                                ))}
+                              </ol>
+                            )}
                           </div>
                         </div>
                       </details>
@@ -1608,6 +1842,233 @@ export default function RecipesPage() {
                             </button>
                           </div>
                         ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="recipe-form-section">
+                  <div className="recipe-section-heading">
+                    <div>
+                      <h3>Scheduler tasks</h3>
+                      <p className="subtitle">
+                        Define every prep, thawing, marinating, cooking, cooling,
+                        storage, and cleanup task that should appear in the daily
+                        schedule.
+                      </p>
+                    </div>
+
+                    <button
+                      className="secondary-button"
+                      onClick={addRecipeTask}
+                      type="button"
+                    >
+                      Add schedule task
+                    </button>
+                  </div>
+
+                  <div className="dynamic-list">
+                    {recipeTasks.map((task, index) => (
+                      <div className="dynamic-row" key={index}>
+                        <div className="recipe-section-heading">
+                          <strong>Task {index + 1}</strong>
+
+                          {recipeTasks.length > 1 ? (
+                            <button
+                              className="text-button danger-text"
+                              onClick={() => removeRecipeTask(index)}
+                              type="button"
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
+
+                        <label className="form-field">
+                          <span>Task title</span>
+                          <input
+                            placeholder="Marinate chicken"
+                            required
+                            value={task.title}
+                            onBlur={() => inferRecipeTaskFromText(index)}
+                            onChange={(event) =>
+                              updateRecipeTask(index, "title", event.target.value)
+                            }
+                          />
+                        </label>
+
+                        <label className="form-field">
+                          <span>Instructions</span>
+                          <textarea
+                            placeholder="Combine the chicken and marinade, cover, and refrigerate."
+                            rows={3}
+                            value={task.instructions}
+                            onBlur={() => inferRecipeTaskFromText(index)}
+                            onChange={(event) =>
+                              updateRecipeTask(
+                                index,
+                                "instructions",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </label>
+
+                        <div className="recipe-field-grid">
+                          <label className="form-field">
+                            <span>Task type</span>
+                            <select
+                              value={task.taskType}
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "taskType",
+                                  event.target.value as RecipeTaskType,
+                                )
+                              }
+                            >
+                              {recipeTaskTypes.map((taskType) => (
+                                <option key={taskType} value={taskType}>
+                                  {recipeTaskTypeLabels[taskType]}
+                                </option>
+                              ))}
+                            </select>
+                            <small>{recipeTaskTypeDescriptions[task.taskType]}</small>
+                          </label>
+
+                          <label className="form-field">
+                            <span>Active minutes</span>
+                            <input
+                              min="0"
+                              required
+                              type="number"
+                              value={task.activeMinutes}
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "activeMinutes",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label className="form-field">
+                            <span>Passive minutes</span>
+                            <input
+                              min="0"
+                              required
+                              type="number"
+                              value={task.passiveMinutes}
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "passiveMinutes",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label className="form-field">
+                            <span>Day offset</span>
+                            <input
+                              max="14"
+                              min="-14"
+                              required
+                              type="number"
+                              value={task.dayOffset}
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "dayOffset",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                            <small>-1 means the previous day; 0 means meal day.</small>
+                          </label>
+
+                          <label className="form-field">
+                            <span>Start before meal (minutes)</span>
+                            <input
+                              min="0"
+                              required
+                              type="number"
+                              value={task.startBeforeMealMinutes}
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "startBeforeMealMinutes",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+
+                          <label className="form-field">
+                            <span>Batch key</span>
+                            <input
+                              disabled={!task.canBatch}
+                              placeholder="chop-onions"
+                              value={task.batchKey}
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "batchKey",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+
+                        <div className="meal-type-options">
+                          <label>
+                            <input
+                              checked={task.unattended}
+                              type="checkbox"
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "unattended",
+                                  event.target.checked,
+                                )
+                              }
+                            />
+                            <span>Can run unattended</span>
+                          </label>
+
+                          <label>
+                            <input
+                              checked={task.blocksActiveWork}
+                              type="checkbox"
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "blocksActiveWork",
+                                  event.target.checked,
+                                )
+                              }
+                            />
+                            <span>Blocks active work time</span>
+                          </label>
+
+                          <label>
+                            <input
+                              checked={task.canBatch}
+                              type="checkbox"
+                              onChange={(event) =>
+                                updateRecipeTask(
+                                  index,
+                                  "canBatch",
+                                  event.target.checked,
+                                )
+                              }
+                            />
+                            <span>Can batch with matching tasks</span>
+                          </label>
+                        </div>
                       </div>
                     ))}
                   </div>

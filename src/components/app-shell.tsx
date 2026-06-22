@@ -10,39 +10,158 @@ type AppShellProps = {
   children: ReactNode;
 };
 
+type IconName =
+  | "dashboard"
+  | "week"
+  | "schedule"
+  | "recipes"
+  | "pantry"
+  | "shopping"
+  | "settings"
+  | "user";
+
+type AppIconProps = {
+  name: IconName;
+  size?: number;
+};
+
+function AppIcon({ name, size = 20 }: AppIconProps) {
+  const commonProps = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.9,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  switch (name) {
+    case "dashboard":
+      return (
+        <svg {...commonProps}>
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </svg>
+      );
+
+    case "week":
+      return (
+        <svg {...commonProps}>
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M8 3v4M16 3v4M3 10h18" />
+          <path d="M7 14h2M11 14h2M15 14h2M7 18h2M11 18h2" />
+        </svg>
+      );
+
+    case "schedule":
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+          <path d="m8 12 2 2 4-4" />
+        </svg>
+      );
+
+    case "recipes":
+      return (
+        <svg {...commonProps}>
+          <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 0 4 22Z" />
+          <path d="M4 5.5V20M8 7h8M8 11h8M8 15h5" />
+        </svg>
+      );
+
+    case "pantry":
+      return (
+        <svg {...commonProps}>
+          <path d="M5 4h14l-1 17H6Z" />
+          <path d="M4 8h16M9 12v5M15 12v5" />
+        </svg>
+      );
+
+    case "shopping":
+      return (
+        <svg {...commonProps}>
+          <path d="M3 4h2l2.2 10.2a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.6L20 8H7" />
+          <circle cx="10" cy="20" r="1" />
+          <circle cx="17" cy="20" r="1" />
+        </svg>
+      );
+
+    case "settings":
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V20.3h-3v-.08a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06-2.12-2.12.06-.06A1.7 1.7 0 0 0 7 15a1.7 1.7 0 0 0-1.56-1.03H5.3v-3h.14A1.7 1.7 0 0 0 7 9.94a1.7 1.7 0 0 0-.34-1.88L6.6 8l2.12-2.12.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.7v-.08h3v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 8l-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.03h.14v3h-.14A1.7 1.7 0 0 0 19.4 15Z" />
+        </svg>
+      );
+
+    case "user":
+      return (
+        <svg {...commonProps}>
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4.5 21a7.5 7.5 0 0 1 15 0" />
+        </svg>
+      );
+  }
+}
+
 const navigationItems = [
   {
     href: "/",
     label: "Dashboard",
     shortLabel: "Home",
+    icon: "dashboard" as IconName,
   },
   {
     href: "/week",
     label: "Week",
     shortLabel: "Week",
+    icon: "week" as IconName,
+  },
+  {
+    href: "/schedule",
+    label: "Schedule",
+    shortLabel: "Schedule",
+    icon: "schedule" as IconName,
   },
   {
     href: "/recipes",
     label: "Recipes",
     shortLabel: "Recipes",
+    icon: "recipes" as IconName,
   },
   {
     href: "/pantry",
     label: "Pantry",
     shortLabel: "Pantry",
+    icon: "pantry" as IconName,
   },
   {
     href: "/shopping",
     label: "Shopping",
     shortLabel: "Shopping",
+    icon: "shopping" as IconName,
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    shortLabel: "Settings",
+    icon: "settings" as IconName,
   },
 ];
 
 const protectedRoutes = [
   "/week",
+  "/schedule",
   "/recipes",
   "/pantry",
   "/shopping",
+  "/settings",
 ];
 
 function isProtectedRoute(pathname: string) {
@@ -90,16 +209,36 @@ function AuthenticationRequired() {
   );
 }
 
-export default function AppShell({
-  children,
-}: AppShellProps) {
+export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
 
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isSigningOut, setIsSigningOut] =
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] =
     useState(false);
+
+  useEffect(() => {
+    const savedState = window.localStorage.getItem(
+      "meal-planner-sidebar-collapsed",
+    );
+
+    setIsSidebarCollapsed(savedState === "true");
+  }, []);
+
+  function toggleSidebar() {
+    setIsSidebarCollapsed((current) => {
+      const next = !current;
+
+      window.localStorage.setItem(
+        "meal-planner-sidebar-collapsed",
+        String(next),
+      );
+
+      return next;
+    });
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -159,7 +298,6 @@ export default function AppShell({
 
     setUser(null);
     setIsSigningOut(false);
-
     router.push("/");
     router.refresh();
   }
@@ -169,11 +307,7 @@ export default function AppShell({
     isProtectedRoute(pathname);
 
   if (isLoginPage) {
-    return (
-      <main className="standalone-page">
-        {children}
-      </main>
-    );
+    return <main className="standalone-page">{children}</main>;
   }
 
   const pageContent = authLoading ? (
@@ -190,23 +324,60 @@ export default function AppShell({
   );
 
   return (
-    <div className="app-shell">
+    <div
+      className={
+        isSidebarCollapsed
+          ? "app-shell sidebar-collapsed"
+          : "app-shell"
+      }
+    >
       <aside className="sidebar">
-        <div className="sidebar-brand">
+        <div className="sidebar-top-row">
           <Link href="/" className="brand-link">
             <span className="brand-mark">MP</span>
 
-            <span>
+            <span className="brand-copy">
               <strong>Meal Planner</strong>
               <small>Plan, cook, shop</small>
             </span>
           </Link>
+
+          <button
+            aria-label={
+              isSidebarCollapsed
+                ? "Expand sidebar"
+                : "Collapse sidebar"
+            }
+            className="sidebar-collapse-button"
+            onClick={toggleSidebar}
+            title={
+              isSidebarCollapsed
+                ? "Expand sidebar"
+                : "Collapse sidebar"
+            }
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {isSidebarCollapsed ? (
+                <path d="m9 18 6-6-6-6" />
+              ) : (
+                <path d="m15 18-6-6 6-6" />
+              )}
+            </svg>
+          </button>
         </div>
 
-        <nav
-          className="sidebar-nav"
-          aria-label="Main navigation"
-        >
+        <nav className="sidebar-nav" aria-label="Main navigation">
           {navigationItems.map((item) => {
             const isActive =
               item.href === "/"
@@ -222,8 +393,17 @@ export default function AppShell({
                 }
                 href={item.href}
                 key={item.href}
+                title={
+                  isSidebarCollapsed ? item.label : undefined
+                }
               >
-                {item.label}
+                <span className="sidebar-nav-icon">
+                  <AppIcon name={item.icon} />
+                </span>
+
+                <span className="sidebar-nav-label">
+                  {item.label}
+                </span>
               </Link>
             );
           })}
@@ -236,12 +416,19 @@ export default function AppShell({
             </p>
           ) : user ? (
             <div className="signed-in-panel">
+              <div
+                className="sidebar-user-icon"
+                title={user.email ?? "Authenticated user"}
+                aria-label={user.email ?? "Authenticated user"}
+              >
+                <AppIcon name="user" size={20} />
+              </div>
+
               <div className="signed-in-details">
                 <span>Signed in as</span>
 
                 <strong title={user.email}>
-                  {user.email ??
-                    "Authenticated user"}
+                  {user.email ?? "Authenticated user"}
                 </strong>
               </div>
 
@@ -251,9 +438,7 @@ export default function AppShell({
                 onClick={handleSignOut}
                 type="button"
               >
-                {isSigningOut
-                  ? "Signing out…"
-                  : "Sign out"}
+                {isSigningOut ? "Signing out…" : "Sign out"}
               </button>
             </div>
           ) : (
@@ -291,9 +476,7 @@ export default function AppShell({
                 onClick={handleSignOut}
                 type="button"
               >
-                {isSigningOut
-                  ? "Signing out…"
-                  : "Sign out"}
+                {isSigningOut ? "Signing out…" : "Sign out"}
               </button>
             ) : (
               <>
@@ -315,9 +498,7 @@ export default function AppShell({
           </div>
         </header>
 
-        <main className="page-content">
-          {pageContent}
-        </main>
+        <main className="page-content">{pageContent}</main>
       </div>
 
       <nav
@@ -340,7 +521,10 @@ export default function AppShell({
               href={item.href}
               key={item.href}
             >
-              {item.shortLabel}
+              <span className="mobile-nav-icon">
+                <AppIcon name={item.icon} size={18} />
+              </span>
+              <span>{item.shortLabel}</span>
             </Link>
           );
         })}

@@ -215,6 +215,32 @@ p {
   gap: 10px;
 }
 
+
+.sidebar-user-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 10%);
+  color: #ffffff;
+}
+
+.sidebar-user-icon svg {
+  display: block;
+}
+
+.signed-in-panel {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.signed-in-panel .secondary-button {
+  grid-column: 1 / -1;
+}
+
 .signed-in-details {
   display: grid;
   min-width: 0;
@@ -2507,5 +2533,1424 @@ body {
       88px +
       var(--safe-area-bottom)
     );
+  }
+}
+
+.schedule-week-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.schedule-week-title {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 180px;
+  text-align: center;
+}
+
+.schedule-week-title span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.schedule-week-title strong {
+  font-size: 0.95rem;
+}
+
+.schedule-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    4,
+    minmax(0, 1fr)
+  );
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.schedule-summary-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.schedule-summary-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.schedule-summary-card strong {
+  color: var(--primary);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.schedule-summary-card small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.schedule-options-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.schedule-message {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.schedule-warning {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 18px;
+  padding: 15px 17px;
+  border: 1px solid #d4862c;
+  border-radius: 12px;
+  background: #fff4df;
+  color: #75470f;
+}
+
+.schedule-warning p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.schedule-day-list {
+  display: grid;
+  gap: 18px;
+}
+
+.schedule-day-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.schedule-day-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.schedule-day-heading h2 {
+  margin: 3px 0 0;
+}
+
+.schedule-day-heading > span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.schedule-task-list {
+  display: grid;
+}
+
+.schedule-task-card {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 18px;
+  padding: 19px 22px;
+  border-bottom: 1px solid var(--border);
+  border-left: 5px solid transparent;
+}
+
+.schedule-task-card:last-child {
+  border-bottom: 0;
+}
+
+.schedule-task-conflict {
+  border-left-color: #d4862c;
+  background: #fffaf1;
+}
+
+.schedule-task-status-completed {
+  opacity: 0.65;
+}
+
+.schedule-task-status-completed h3 {
+  text-decoration: line-through;
+}
+
+.schedule-task-status-skipped {
+  opacity: 0.55;
+}
+
+.schedule-task-time {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.schedule-task-time strong {
+  color: var(--primary);
+  font-size: 0.9rem;
+}
+
+.schedule-task-time span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.schedule-task-content {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.schedule-task-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.schedule-task-title-row h3 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+}
+
+.schedule-task-type {
+  color: var(--muted);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.schedule-status-badge {
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.schedule-status-pending {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.schedule-status-in_progress {
+  background: #fff4df;
+  color: #8a5917;
+}
+
+.schedule-status-completed {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.schedule-status-skipped {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.schedule-task-instructions,
+.schedule-task-source,
+.schedule-task-notes {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.schedule-task-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.schedule-task-metadata span {
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.schedule-task-metadata
+  .schedule-conflict-label {
+  background: #fff0d6;
+  color: #8a5917;
+}
+
+.schedule-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.schedule-task-actions
+  .primary-button,
+.schedule-task-actions
+  .secondary-button {
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+@media (max-width: 1050px) {
+  .schedule-summary-grid {
+    grid-template-columns: repeat(
+      2,
+      minmax(0, 1fr)
+    );
+  }
+}
+
+@media (max-width: 700px) {
+  .schedule-week-toolbar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .schedule-week-title {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .schedule-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-options-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .schedule-task-card {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 17px;
+  }
+
+  .schedule-task-time {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+  }
+
+  .schedule-task-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .schedule-day-heading {
+    padding: 17px;
+  }
+
+  .schedule-task-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .schedule-task-actions
+    .primary-button,
+  .schedule-task-actions
+    .secondary-button {
+    width: 100%;
+  }
+}
+
+
+/* =========================================================
+   Multi-recipe weekly meal picker
+   ========================================================= */
+
+.meal-slot-recipe-list {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+}
+
+.meal-slot-recipe-list strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-recipe-picker {
+  display: grid;
+  gap: 16px;
+  padding: 20px 24px 0;
+}
+
+.recipe-picker-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.selected-recipe-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.selected-recipe-chip {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.selected-recipe-chip span {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.recipe-picker-tabs {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.recipe-picker-tab {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.recipe-picker-tab.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.recipe-picker-search {
+  display: grid;
+  gap: 7px;
+}
+
+.recipe-picker-search > span {
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.recipe-picker-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.recipe-picker-search input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgb(23 76 43 / 11%);
+}
+
+.multi-recipe-picker .recipe-picker-list {
+  padding: 0 0 20px;
+}
+
+.multi-recipe-picker .recipe-option {
+  display: grid;
+  padding: 0;
+  overflow: hidden;
+}
+
+.recipe-option-toggle {
+  display: grid;
+  width: 100%;
+  grid-template-columns:
+    26px
+    minmax(0, 1fr)
+    auto;
+  align-items: start;
+  gap: 12px;
+  padding: 15px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.recipe-option-checkbox {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.recipe-option.selected
+  .recipe-option-checkbox {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.recipe-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.recipe-option-copy small {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.recipe-option-duration {
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.recipe-option-servings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 12px 15px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.recipe-option-servings > span {
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.recipe-option-servings .stepper {
+  gap: 11px;
+}
+
+.recipe-option-servings
+  .stepper button {
+  width: 32px;
+  height: 32px;
+}
+
+@media (max-width: 520px) {
+  .multi-recipe-picker {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .recipe-option-toggle {
+    grid-template-columns:
+      24px
+      minmax(0, 1fr);
+  }
+
+  .recipe-option-duration {
+    grid-column: 2;
+  }
+
+  .recipe-option-servings {
+    align-items: flex-start;
+  }
+}
+
+/* =========================================================
+   Collapsible desktop sidebar
+   ========================================================= */
+
+:root {
+  --sidebar-collapsed-width: 72px;
+}
+
+.app-shell,
+.sidebar {
+  transition:
+    grid-template-columns 180ms ease,
+    width 180ms ease;
+}
+
+.sidebar-collapsed {
+  grid-template-columns:
+    var(--sidebar-collapsed-width)
+    minmax(0, 1fr);
+}
+
+.sidebar {
+  gap: 18px;
+}
+
+.sidebar-top-row {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sidebar-top-row .brand-link {
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar-collapse-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 8%);
+  color: #ffffff;
+  cursor: pointer;
+  transition:
+    background 130ms ease,
+    border-color 130ms ease,
+    transform 130ms ease;
+}
+
+.sidebar-collapse-button:hover {
+  border-color: rgb(255 255 255 / 38%);
+  background: rgb(255 255 255 / 15%);
+}
+
+.sidebar-collapse-button:active {
+  transform: scale(0.96);
+}
+
+.sidebar-nav-link {
+  gap: 12px;
+}
+
+.sidebar-nav-icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  color: currentColor;
+}
+
+.sidebar-nav-icon svg,
+.mobile-nav-icon svg {
+  display: block;
+}
+
+.sidebar-collapsed .sidebar {
+  width: var(--sidebar-collapsed-width);
+  padding: 18px 10px;
+}
+
+.sidebar-collapsed .sidebar-top-row {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.sidebar-collapsed .sidebar-top-row .brand-link {
+  display: grid;
+  width: 100%;
+  justify-content: center;
+}
+
+.sidebar-collapsed .brand-mark {
+  width: 40px;
+  height: 40px;
+  flex-basis: 40px;
+}
+
+.sidebar-collapsed .brand-copy,
+.sidebar-collapsed .sidebar-nav-label,
+.sidebar-collapsed .signed-in-details,
+.sidebar-collapsed .auth-button-stack,
+.sidebar-collapsed .signed-in-panel .secondary-button {
+  display: none;
+}
+
+.sidebar-collapsed .sidebar-collapse-button {
+  width: 40px;
+  height: 34px;
+}
+
+.sidebar-collapsed .sidebar-nav {
+  width: 100%;
+  justify-items: center;
+}
+
+.sidebar-collapsed .sidebar-nav-link {
+  width: 46px;
+  min-height: 46px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 12px;
+}
+
+.sidebar-collapsed .sidebar-nav-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.sidebar-collapsed .sidebar-auth {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  padding-top: 14px;
+}
+
+.sidebar-collapsed .signed-in-panel {
+  display: grid;
+  justify-items: center;
+}
+
+.sidebar-collapsed .sidebar-user-icon {
+  width: 42px;
+  height: 42px;
+  border-color: rgb(255 255 255 / 34%);
+  background: rgb(255 255 255 / 14%);
+}
+
+.mobile-nav-icon {
+  display: grid;
+  min-height: 20px;
+  margin-bottom: 3px;
+  place-items: center;
+}
+
+@media (max-width: 800px) {
+  .sidebar-collapsed {
+    display: block;
+  }
+
+  .mobile-bottom-nav {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* =========================================================
+   Settings and flexible meal-slot planner
+   ========================================================= */
+
+.settings-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.settings-global-panel,
+.settings-days-panel {
+  margin-bottom: 18px;
+}
+
+.settings-global-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.settings-preserve-check {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.settings-days-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-day-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+
+.settings-day-tab {
+  display: grid;
+  min-height: 58px;
+  place-items: center;
+  gap: 2px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.settings-day-tab:last-child {
+  border-right: 0;
+}
+
+.settings-day-tab small {
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.settings-day-tab.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: inset 0 -3px 0 var(--primary);
+}
+
+.settings-day-content {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+}
+
+.settings-day-header,
+.settings-meal-heading,
+.settings-meal-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.settings-day-header h2,
+.settings-meal-heading p {
+  margin-bottom: 0;
+}
+
+.settings-inherit-check {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.settings-linked-message {
+  margin: -10px 0 0;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.82rem;
+}
+
+.settings-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-fieldset > legend,
+.settings-meal-heading legend {
+  margin-bottom: 14px;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.settings-fieldset:disabled {
+  opacity: 0.58;
+}
+
+.settings-time-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-cooking-check {
+  min-height: 43px;
+  align-self: end;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.settings-meal-heading {
+  margin-bottom: 14px;
+}
+
+.settings-meal-heading p {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.settings-meal-list {
+  display: grid;
+  gap: 13px;
+}
+
+.settings-meal-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.settings-meal-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-icon-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--primary);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.settings-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.settings-meal-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 0.75fr 0.75fr 1.25fr;
+  gap: 12px;
+}
+
+.flexible-week-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.flexible-week-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.flexible-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(190px, 1fr));
+  min-width: 1330px;
+}
+
+.flexible-day-column {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.flexible-day-column:last-child {
+  border-right: 0;
+}
+
+.flexible-day-heading {
+  display: grid;
+  min-height: 60px;
+  place-items: center;
+  gap: 2px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+  text-align: center;
+}
+
+.flexible-day-heading strong {
+  font-size: 0.82rem;
+}
+
+.flexible-day-heading small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.flexible-day-slots {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+}
+
+.flexible-meal-slot {
+  display: grid;
+  width: 100%;
+  min-height: 116px;
+  align-content: start;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.flexible-meal-slot:hover:not(:disabled),
+.flexible-meal-slot.filled {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.flexible-meal-slot-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.flexible-meal-slot-heading strong {
+  font-size: 0.8rem;
+}
+
+.flexible-meal-slot-heading small,
+.flexible-slot-mode {
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+
+.flexible-add-label {
+  color: var(--primary);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.flexible-recipe-pill {
+  display: block;
+  overflow: hidden;
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 68%);
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-picker-modal {
+  width: min(760px, 100%);
+}
+
+@media (max-width: 1100px) {
+  .settings-time-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-meal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-preparation-field {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 800px) {
+  .mobile-bottom-nav {
+    grid-template-columns: repeat(7, minmax(58px, 1fr));
+    overflow-x: auto;
+  }
+
+  .settings-summary-grid,
+  .settings-global-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-day-tabs {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .settings-day-tab {
+    min-width: 82px;
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .settings-day-content {
+    padding: 18px;
+  }
+
+  .settings-day-header,
+  .settings-meal-heading,
+  .settings-meal-card-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-time-grid,
+  .settings-meal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-preparation-field {
+    grid-column: auto;
+  }
+
+  .settings-meal-card-actions {
+    align-self: flex-end;
+  }
+}
+
+
+.settings-batch-days-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.settings-batch-days-fieldset legend {
+  margin-bottom: 9px;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.settings-batch-days-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(110px, 1fr)
+  );
+  gap: 9px;
+}
+
+.settings-batch-days-grid .checkbox-field {
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+/* Linked settings days */
+.settings-inherit-check input {
+  width: 17px;
+  height: 17px;
+}
+
+.settings-day-content:has(.settings-linked-message) .settings-fieldset {
+  border-radius: 12px;
+}
+
+.settings-fieldset:disabled {
+  opacity: 0.48;
+  filter: grayscale(0.25);
+}
+
+.settings-fieldset:disabled input,
+.settings-fieldset:disabled select,
+.settings-fieldset:disabled button,
+.settings-fieldset:disabled textarea {
+  cursor: not-allowed;
+}
+
+/* =========================================================
+   Dashboard and unscheduled-task states
+   ========================================================= */
+
+.dashboard-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.dashboard-summary-card {
+  display: grid;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.dashboard-summary-card span,
+.dashboard-summary-card small {
+  color: var(--muted);
+}
+
+.dashboard-summary-card span {
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.dashboard-summary-card strong {
+  color: var(--primary);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.dashboard-summary-card small {
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.dashboard-content-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.dashboard-panel .panel-heading {
+  align-items: center;
+}
+
+.dashboard-panel .panel-heading h2 {
+  margin: 0;
+}
+
+.dashboard-empty-state {
+  padding: 10px 0 0;
+}
+
+.dashboard-task-list,
+.dashboard-meal-list {
+  display: grid;
+}
+
+.dashboard-task {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-task:last-child,
+.dashboard-meal:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-task-time {
+  color: var(--primary);
+  font-size: 0.82rem;
+}
+
+.dashboard-task p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.dashboard-task-unscheduled {
+  padding-right: 10px;
+  padding-left: 10px;
+  border-left: 4px solid #d4862c;
+  background: #fffaf1;
+}
+
+.dashboard-meal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-meal > div {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-meal small {
+  color: var(--muted);
+}
+
+.dashboard-meal > span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.schedule-task-unscheduled {
+  border-left-color: #d4862c;
+  background: #fffaf1;
+}
+
+.schedule-unscheduled-label {
+  background: #fff0d6 !important;
+  color: #8a5917 !important;
+}
+
+.schedule-unscheduled-warning {
+  border-style: dashed;
+}
+
+@media (max-width: 900px) {
+  .dashboard-summary-grid,
+  .dashboard-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard-task {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+}
+
+/* =========================================================
+   Week finalization controls
+   ========================================================= */
+
+.planner-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.week-copy-button {
+  min-width: 174px;
+}
+
+/* =========================================================
+   Day-wise schedule view
+   ========================================================= */
+
+.schedule-day-view-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.schedule-day-view-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.schedule-day-view-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.schedule-day-view-heading span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.schedule-day-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.schedule-day-tab {
+  display: inline-flex;
+  min-height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.schedule-day-tab > span {
+  display: inline-grid;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 0.68rem;
+}
+
+.schedule-day-tab.active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.schedule-day-tab.active > span {
+  background: rgb(255 255 255 / 18%);
+  color: #ffffff;
+}
+
+@media (max-width: 650px) {
+  .planner-summary-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .planner-summary-actions .primary-button,
+  .planner-summary-actions .text-button {
+    width: 100%;
+  }
+
+  .week-copy-button {
+    grid-column: 1 / -1;
+    min-width: 0;
   }
 }
