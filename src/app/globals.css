@@ -4544,3 +4544,37 @@ body {
     width: 100%;
   }
 }
+
+
+/* Recipe library tab counts */
+.recipe-library-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.recipe-library-count {
+  display: inline-flex;
+  min-width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.recipe-library-tab.active .recipe-library-count {
+  background: color-mix(in srgb, white 22%, transparent);
+  color: inherit;
+}
+
+.recipe-favorite-button:disabled {
+  cursor: default;
+  opacity: 1;
+}

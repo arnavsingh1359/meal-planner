@@ -1074,6 +1074,12 @@ export default function RecipesPage() {
       return;
     }
 
+    if (recipe.user_id === user.id) {
+      setMessage("Recipes you create are always saved to Favorites.");
+      setFavoriteRecipeIds((current) => new Set(current).add(recipe.id));
+      return;
+    }
+
     const isFavorite = favoriteRecipeIds.has(recipe.id);
 
     if (isFavorite) {
@@ -1169,10 +1175,27 @@ export default function RecipesPage() {
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
 
+  function isRecipeFavorite(recipe: Recipe) {
+    return (
+      favoriteRecipeIds.has(recipe.id) ||
+      (currentUserId !== null && recipe.user_id === currentUserId)
+    );
+  }
+
+  const publicRecipeCount = new Set(
+    recipes.filter((recipe) => recipe.is_public).map((recipe) => recipe.id),
+  ).size;
+
+  const myRecipeCount = new Set(
+    recipes
+      .filter((recipe) => recipe.user_id === currentUserId)
+      .map((recipe) => recipe.id),
+  ).size;
+
   const visibleRecipes = recipes.filter((recipe) => {
     const isInActiveTab =
       activeLibraryTab === "favorites"
-        ? favoriteRecipeIds.has(recipe.id)
+        ? isRecipeFavorite(recipe)
         : activeLibraryTab === "mine"
           ? recipe.user_id === currentUserId
           : recipe.is_public;
@@ -1228,7 +1251,10 @@ export default function RecipesPage() {
           role="tab"
           type="button"
         >
-          Discover
+          <span>Discover</span>
+          <span className="recipe-library-count" aria-label={`${publicRecipeCount} public recipes`}>
+            {publicRecipeCount}
+          </span>
         </button>
 
         <button
@@ -1246,7 +1272,10 @@ export default function RecipesPage() {
           role="tab"
           type="button"
         >
-          My recipes
+          <span>My recipes</span>
+          <span className="recipe-library-count" aria-label={`${myRecipeCount} recipes created by you`}>
+            {myRecipeCount}
+          </span>
         </button>
       </div>
 
@@ -1478,22 +1507,25 @@ export default function RecipesPage() {
                               {recipe.is_public ? (
                                 <button
                                   aria-label={
-                                    favoriteRecipeIds.has(recipe.id)
+                                    isRecipeFavorite(recipe)
                                       ? `Remove ${recipe.name} from favorites`
                                       : `Add ${recipe.name} to favorites`
                                   }
                                   className={`recipe-favorite-button ${
-                                    favoriteRecipeIds.has(recipe.id) ? "active" : ""
+                                    isRecipeFavorite(recipe) ? "active" : ""
                                   }`}
+                                  disabled={recipe.user_id === currentUserId}
                                   onClick={() => toggleFavorite(recipe)}
                                   title={
-                                    favoriteRecipeIds.has(recipe.id)
-                                      ? "Remove from favorites"
-                                      : "Add to favorites"
+                                    recipe.user_id === currentUserId
+                                      ? "Your recipes are always in Favorites"
+                                      : isRecipeFavorite(recipe)
+                                        ? "Remove from favorites"
+                                        : "Add to favorites"
                                   }
                                   type="button"
                                 >
-                                  {favoriteRecipeIds.has(recipe.id) ? "♥" : "♡"}
+                                  {isRecipeFavorite(recipe) ? "♥" : "♡"}
                                 </button>
                               ) : null}
 
